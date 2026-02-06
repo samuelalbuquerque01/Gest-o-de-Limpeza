@@ -1,73 +1,80 @@
-// No roomController.js, adicione esta função:
-/**
- * ✅ ESCANEAR QR CODE (WORKER)
- * GET /api/rooms/qr/:qrCode
- */
-scanQRCode: async (req, res) => {
-  try {
-    const { qrCode } = req.params;
+import React, { useState } from "react";
+import api from "../services/api"; // ajuste se seu caminho for diferente
 
-    if (!qrCode) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'QR Code é obrigatório' 
-      });
+export default function QRScan() {
+  const [qrCode, setQrCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  async function handleScan() {
+    setError("");
+    setResult(null);
+
+    const code = qrCode.trim();
+    if (!code) {
+      setError("Informe o QR Code.");
+      return;
     }
 
-    // Buscar sala pelo QR Code
-    const room = await prisma.room.findUnique({
-      where: { qrCode },
-    });
+    try {
+      setLoading(true);
 
-    if (!room) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Ambiente não encontrado com este QR Code' 
-      });
-    }
+      // chama o BACKEND: GET /api/rooms/qr/:qrCode
+      const data = await api.get(`/rooms/qr/${encodeURIComponent(code)}`);
 
-    // Verificar se há limpeza em andamento nesta sala hoje
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const activeCleaning = await prisma.cleaningRecord.findFirst({
-      where: {
-        roomId: room.id,
-        status: 'IN_PROGRESS',
-        startedAt: {
-          gte: today
-        }
-      },
-      include: {
-        cleaner: {
-          select: { id: true, name: true }
-        }
+      // seu backend retorna: { success, room, isBeingCleaned, currentCleaner, message }
+      if (!data?.success) {
+        setError(data?.message || "Falha ao buscar ambiente pelo QR Code.");
+        return;
       }
-    });
 
-    return res.json({
-      success: true,
-      room: {
-        id: room.id,
-        name: room.name,
-        type: room.type,
-        location: room.location,
-        status: room.status,
-        qrCode: room.qrCode,
-        priority: room.priority,
-        lastCleaned: room.lastCleaned,
-      },
-      isBeingCleaned: !!activeCleaning,
-      currentCleaner: activeCleaning?.cleaner || null,
-      message: activeCleaning 
-        ? `Esta sala está sendo limpa por ${activeCleaning.cleaner?.name || 'alguém'}.` 
-        : 'Sala disponível para limpeza.'
-    });
-  } catch (error) {
-    console.error('🔥 Erro ao escanear QR:', error);
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Erro ao processar QR Code' 
-    });
+      setResult(data);
+    } catch (e) {
+      setError(e?.message || "Erro ao conectar com o servidor.");
+    } finally {
+      setLoading(false);
+    }
   }
+
+  return (
+    <div style={{ padding: 16 }}>
+      <h2>Escanear QR Code</h2>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <input
+          value={qrCode}
+          onChange={(e) => setQrCode(e.target.value)}
+          placeholder="Cole/digite o QR Code aqui"
+          style={{ flex: 1, padding: 10 }}
+        />
+        <button onClick={handleScan} disabled={loading} style={{ padding: "10px 14px" }}>
+          {loading ? "Buscando..." : "Buscar"}
+        </button>
+      </div>
+
+      {error ? (
+        <p style={{ marginTop: 12 }}>{error}</p>
+      ) : null}
+
+      {result?.room ? (
+        <div style={{ marginTop: 16, padding: 12, border: "1px solid #ddd", borderRadius: 8 }}>
+          <h3>{result.room.name}</h3>
+          <p><b>Local:</b> {result.room.location}</p>
+          <p><b>Tipo:</b> {result.room.type}</p>
+          <p><b>Status:</b> {result.room.status}</p>
+          <p><b>Prioridade:</b> {result.room.priority}</p>
+
+          <p style={{ marginTop: 10 }}>
+            <b>Situação:</b>{" "}
+            {result.isBeingCleaned
+              ? `Em limpeza por ${result.currentCleaner?.name || "alguém"}`
+              : "Disponível para limpeza"}
+          </p>
+
+          {result.message ? <p>{result.message}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
