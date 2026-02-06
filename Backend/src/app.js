@@ -42,10 +42,11 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // =======================
-// CORS
-// - Em produção (tudo junto no Render), o front chama /api na mesma origem.
-//   Então liberamos tudo para não quebrar.
-// - Em dev, restringe para localhost.
+// CORS (Render-proof)
+// - libera localhost (dev)
+// - libera seu domínio do Render
+// - libera qualquer *.onrender.com (se trocar subdomínio depois)
+// - não joga erro 500 (retorna cb(null, false) em vez de throw)
 // =======================
 const allowedOrigins = new Set([
   'http://localhost:3000',
@@ -54,22 +55,29 @@ const allowedOrigins = new Set([
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
   'http://127.0.0.1:5173',
+
+  // ✅ seu domínio atual
+  'https://gest-o-de-limpeza.onrender.com',
 ]);
 
 app.use(
   cors({
     origin(origin, cb) {
-      // ✅ Produção: libera (monolito + Render)
-      if (process.env.NODE_ENV === 'production') return cb(null, true);
-
-      // Postman/curl/same-origin podem vir sem Origin
+      // postman/curl/same-origin podem não mandar Origin
       if (!origin) return cb(null, true);
 
       const normalized = origin.endsWith('/') ? origin.slice(0, -1) : origin;
+
+      // ✅ libera seu domínio
       if (allowedOrigins.has(normalized)) return cb(null, true);
 
+      // ✅ libera qualquer subdomínio Render
+      if (normalized.endsWith('.onrender.com')) return cb(null, true);
+
       console.log('❌ CORS bloqueou origin:', origin);
-      return cb(new Error('Not allowed by CORS'));
+
+      // ✅ NÃO estoura 500
+      return cb(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -77,7 +85,9 @@ app.use(
   })
 );
 
+// Preflight
 app.options('*', cors());
+
 
 // =======================
 // Health
