@@ -3,32 +3,33 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled (-pooler) para a aplicação rodando
+  directUrl = env("DIRECT_URL")   // direct (sem -pooler) para migrations
 }
 
 model User {
-  id             String    @id @default(uuid())
-  email          String?   @unique  // Opcional para funcionários
-  password       String?   // Opcional para funcionários
-  name           String
-  role           UserRole  @default(CLEANER)
-  status         UserStatus @default(ACTIVE)
-  phone          String?
-  avatar         String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  
+  id              String      @id @default(uuid())
+  email           String?     @unique // Opcional para funcionários
+  password        String?     // Opcional para funcionários
+  name            String
+  role            UserRole    @default(CLEANER)
+  status          UserStatus  @default(ACTIVE)
+  phone           String?
+  avatar          String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
   // Relações
   cleaningRecords CleaningRecord[]
-  
+
   @@index([email])
   @@index([role])
 }
 
 enum UserRole {
   ADMIN
-  CLEANER  // Apenas admin e cleaner
+  CLEANER // Apenas admin e cleaner
 }
 
 enum UserStatus {
@@ -38,23 +39,23 @@ enum UserStatus {
 }
 
 model Room {
-  id          String    @id @default(uuid())
-  name        String
-  type        RoomType  @default(ROOM)
-  location    String
-  description String?
-  qrCode      String    @unique
-  status      RoomStatus @default(PENDING)
-  priority    Priority  @default(MEDIUM)
-  notes       String?
-  lastCleaned DateTime?
+  id           String      @id @default(uuid())
+  name         String
+  type         RoomType    @default(ROOM)
+  location     String
+  description  String?
+  qrCode       String      @unique
+  status       RoomStatus  @default(PENDING)
+  priority     Priority    @default(MEDIUM)
+  notes        String?
+  lastCleaned  DateTime?
   nextCleaning DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
   // Relações
   cleaningRecords CleaningRecord[]
-  
+
   @@index([type])
   @@index([status])
   @@index([priority])
@@ -82,21 +83,21 @@ enum Priority {
 }
 
 model CleaningRecord {
-  id          String    @id @default(uuid())
+  id          String         @id @default(uuid())
   roomId      String
   cleanerId   String
   status      CleaningStatus @default(IN_PROGRESS)
   checklist   Json?
   notes       String?
-  startedAt   DateTime  @default(now())
+  startedAt   DateTime       @default(now())
   completedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
   // Relações
-  room    Room @relation(fields: [roomId], references: [id])
+  room   Room @relation(fields: [roomId], references: [id])
   cleaner User @relation(fields: [cleanerId], references: [id])
-  
+
   @@index([roomId])
   @@index([cleanerId])
   @@index([status])
@@ -110,13 +111,13 @@ enum CleaningStatus {
 }
 
 model Report {
-  id         String    @id @default(uuid())
-  type       ReportType
-  period     String
-  data       Json
+  id          String     @id @default(uuid())
+  type        ReportType
+  period      String
+  data        Json
   generatedBy String
-  createdAt  DateTime  @default(now())
-  
+  createdAt   DateTime   @default(now())
+
   @@index([type])
   @@index([createdAt])
 }

@@ -1,6 +1,7 @@
 // Backend/src/app.js
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 
 const config = require('../config');
 
@@ -13,7 +14,7 @@ const roomRoutes = require('./routes/roomRoutes');
 const cleaningRoutes = require('./routes/cleaningRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const userRoutes = require('./routes/userRoutes');
-const qrRoutes = require('./routes/qrRoutes'); // ✅ NOVA ROTA QR
+const qrRoutes = require('./routes/qrRoutes');
 
 const app = express();
 
@@ -39,7 +40,9 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // =======================
-// CORS (aceita localhost e 127.0.0.1)
+// CORS
+// - Em produção (tudo junto), o front chama /api na mesma origem => CORS nem é necessário.
+// - Em dev, libera localhost.
 // =======================
 const allowedOrigins = new Set([
   'http://localhost:3000',
@@ -53,10 +56,13 @@ const allowedOrigins = new Set([
 app.use(
   cors({
     origin(origin, cb) {
+      // same-origin ou ferramentas (curl/postman) geralmente não mandam Origin
       if (!origin) return cb(null, true);
+
       const normalized = origin.endsWith('/') ? origin.slice(0, -1) : origin;
       if (allowedOrigins.has(normalized)) return cb(null, true);
 
+      // Em produção (tudo junto), se vier origin diferente, bloqueia mesmo.
       console.log('❌ CORS bloqueou origin:', origin);
       return cb(new Error('Not allowed by CORS'));
     },
@@ -83,8 +89,8 @@ app.get('/api/health', (req, res) => {
       cleaning: 'active',
       reports: 'active',
       users: 'active',
-      qr: 'active' // ✅ NOVO SERVIÇO
-    }
+      qr: 'active',
+    },
   });
 });
 
@@ -99,21 +105,21 @@ app.get('/api/qr-test', (req, res) => {
       generateBatch: 'POST /api/qr/generate-batch',
       validateQR: 'POST /api/qr/validate',
       downloadQR: 'GET /api/qr/download/:roomId',
-      roomQR: 'POST /api/rooms/:id/generate-qr'
+      roomQR: 'POST /api/rooms/:id/generate-qr',
     },
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });
 
 // =======================
-// Rotas
+// Rotas API
 // =======================
 safeUse('/api/auth', authRoutes, 'authRoutes');
 safeUse('/api/rooms', roomRoutes, 'roomRoutes');
 safeUse('/api/cleaning', cleaningRoutes, 'cleaningRoutes');
 safeUse('/api/reports', reportRoutes, 'reportRoutes');
 safeUse('/api/users', userRoutes, 'userRoutes');
-safeUse('/api/qr', qrRoutes, 'qrRoutes'); // ✅ ADICIONADO AQUI
+safeUse('/api/qr', qrRoutes, 'qrRoutes');
 
 // ✅ Alias legado (front antigo usa /api/cleaners)
 app.get('/api/cleaners', async (req, res) => {
@@ -140,7 +146,7 @@ app.get('/api/print-qr/:roomId', async (req, res) => {
   try {
     const { roomId } = req.params;
     const prisma = require('./utils/database');
-    
+
     const room = await prisma.room.findUnique({
       where: { id: roomId },
       select: {
@@ -148,13 +154,11 @@ app.get('/api/print-qr/:roomId', async (req, res) => {
         name: true,
         type: true,
         location: true,
-        qrCode: true
-      }
+        qrCode: true,
+      },
     });
 
-    if (!room) {
-      return res.status(404).send('Sala não encontrada');
-    }
+    if (!room) return res.status(404).send('Sala não encontrada');
 
     const html = `
       <!DOCTYPE html>
@@ -162,61 +166,20 @@ app.get('/api/print-qr/:roomId', async (req, res) => {
         <head>
           <title>QR Code - ${room.name}</title>
           <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              padding: 20px; 
-              text-align: center;
-              max-width: 600px;
-              margin: 0 auto;
-            }
-            .qr-container {
-              border: 2px solid #1976d2;
-              padding: 20px;
-              border-radius: 10px;
-              margin: 20px 0;
-              background: white;
-            }
-            .room-name {
-              font-size: 24px;
-              font-weight: bold;
-              color: #1976d2;
-              margin-bottom: 10px;
-            }
-            .room-info {
-              color: #666;
-              margin-bottom: 20px;
-            }
-            .qr-code {
-              font-family: monospace;
-              font-size: 18px;
-              background: #f5f5f5;
-              padding: 10px;
-              border-radius: 5px;
-              word-break: break-all;
-              margin: 20px 0;
-            }
-            .instructions {
-              font-size: 14px;
-              color: #888;
-              margin-top: 20px;
-              border-top: 1px solid #eee;
-              padding-top: 10px;
-            }
-            @media print {
-              body { padding: 0; }
-              .no-print { display: none; }
-            }
+            body { font-family: Arial, sans-serif; padding: 20px; text-align: center; max-width: 600px; margin: 0 auto; }
+            .qr-container { border: 2px solid #1976d2; padding: 20px; border-radius: 10px; margin: 20px 0; background: white; }
+            .room-name { font-size: 24px; font-weight: bold; color: #1976d2; margin-bottom: 10px; }
+            .room-info { color: #666; margin-bottom: 20px; }
+            .qr-code { font-family: monospace; font-size: 18px; background: #f5f5f5; padding: 10px; border-radius: 5px; word-break: break-all; margin: 20px 0; }
+            .instructions { font-size: 14px; color: #888; margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; }
+            @media print { body { padding: 0; } .no-print { display: none; } }
           </style>
         </head>
         <body>
           <div class="qr-container">
             <div class="room-name">${room.name}</div>
-            <div class="room-info">
-              ${room.type} • ${room.location}
-            </div>
-            <div class="qr-code">
-              ${room.qrCode || 'QR CODE NÃO GERADO'}
-            </div>
+            <div class="room-info">${room.type} • ${room.location}</div>
+            <div class="qr-code">${room.qrCode || 'QR CODE NÃO GERADO'}</div>
             <div class="instructions">
               Escaneie este código com o aplicativo para iniciar a limpeza<br>
               Sistema Neuropsicocentro • Gerado em ${new Date().toLocaleDateString('pt-BR')}
@@ -228,25 +191,33 @@ app.get('/api/print-qr/:roomId', async (req, res) => {
             </button>
           </div>
           <script>
-            // Auto-print on page load
-            window.onload = function() {
-              setTimeout(() => {
-                window.print();
-              }, 1000);
-            };
+            window.onload = function() { setTimeout(() => window.print(), 1000); };
           </script>
         </body>
       </html>
     `;
-
     res.send(html);
   } catch (error) {
     res.status(500).send('Erro ao gerar página de impressão');
   }
 });
 
-// 404
-app.use((req, res) => {
+// =======================
+// ✅ SERVIR FRONTEND (React build)
+// Coloque isso ANTES do 404 da API.
+// =======================
+const frontBuildPath = path.join(__dirname, '../../Front/build');
+app.use(express.static(frontBuildPath));
+
+// SPA fallback: qualquer rota que NÃO for /api vai para o index do React
+app.get(/^\/(?!api).*/, (req, res) => {
+  res.sendFile(path.join(frontBuildPath, 'index.html'));
+});
+
+// =======================
+// 404 (somente API)
+// =======================
+app.use('/api', (req, res) => {
   res.status(404).json({
     success: false,
     message: `Rota não encontrada: ${req.method} ${req.originalUrl}`,
@@ -258,8 +229,8 @@ app.use((req, res) => {
       '/api/cleaning',
       '/api/qr/generate/:roomId',
       '/api/qr/validate',
-      '/api/health'
-    ]
+      '/api/health',
+    ],
   });
 });
 

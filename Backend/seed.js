@@ -1,12 +1,16 @@
-// Backend/src/seed.js
+// Backend/seed.js
 const bcrypt = require('bcryptjs');
-const prisma = require('./utils/database');
+const { PrismaClient } = require('@prisma/client');
+
+const prisma = new PrismaClient();
 
 async function main() {
   console.log('🌱 Rodando seed...');
 
+  // =========================
   // ADMIN
-  const adminEmail = 'admin@limpeza.com';
+  // =========================
+  const adminEmail = 'manutencao@neuropsicocentro.com.br';
   const adminPassword = await bcrypt.hash('senha123', 10);
 
   const admin = await prisma.user.upsert({
@@ -28,7 +32,9 @@ async function main() {
 
   console.log('✅ Admin OK:', admin.email);
 
-  // WORKER (CLEANER)
+  // =========================
+  // WORKER / CLEANER
+  // =========================
   const workerEmail = 'funcionario@limpeza.com';
   const workerPassword = await bcrypt.hash('123456', 10);
 
@@ -36,7 +42,7 @@ async function main() {
     where: { email: workerEmail },
     update: {
       name: 'Funcionário Teste',
-      role: 'CLEANER',      // ou 'SUPERVISOR'
+      role: 'CLEANER',
       status: 'ACTIVE',
       password: workerPassword,
     },
@@ -55,8 +61,8 @@ async function main() {
 }
 
 main()
-  .catch((e) => {
-    console.error('❌ Erro no seed:', e);
+  .catch((error) => {
+    console.error('❌ Erro no seed:', error);
     process.exit(1);
   })
   .finally(async () => {
