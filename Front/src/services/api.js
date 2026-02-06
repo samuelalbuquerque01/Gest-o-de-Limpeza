@@ -1,4 +1,4 @@
-// src/services/api.js
+// Front/src/services/api.js
 import axios from "axios";
 
 function safeJsonParse(value) {
@@ -28,7 +28,7 @@ function getToken() {
 
   if (possible && possible !== "null" && possible !== "undefined") return possible;
 
-  // 3) fallback (se você tiver salvo user com token dentro por algum motivo)
+  // 3) fallback
   const userRaw = localStorage.getItem("user");
   const user = userRaw ? safeJsonParse(userRaw) : null;
   const uToken = user?.token || user?.accessToken;
@@ -37,8 +37,28 @@ function getToken() {
   return null;
 }
 
+/**
+ * Aceita:
+ *  - REACT_APP_API_URL=https://gest-o-de-limpeza.onrender.com
+ *  - REACT_APP_API_URL=https://gest-o-de-limpeza.onrender.com/api
+ * Em dev, cai no localhost automaticamente.
+ */
+function normalizeBaseURL() {
+  const raw = (process.env.REACT_APP_API_URL || "http://localhost:5000").trim();
+
+  // remove barra final
+  const noTrailingSlash = raw.replace(/\/+$/, "");
+
+  // se já termina com /api, mantém; senão adiciona
+  const withApi = noTrailingSlash.endsWith("/api")
+    ? noTrailingSlash
+    : `${noTrailingSlash}/api`;
+
+  return withApi;
+}
+
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || "http://localhost:5000/api",
+  baseURL: normalizeBaseURL(),
   timeout: 15000,
 });
 
@@ -46,14 +66,11 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const token = getToken();
-
-    // garante headers sempre como objeto normal
     config.headers = config.headers || {};
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     } else {
-      // se não tem token, remove pra não enviar "Bearer null"
       if (config.headers.Authorization) delete config.headers.Authorization;
     }
 
@@ -68,18 +85,11 @@ api.interceptors.response.use(
   (error) => {
     const status = error?.response?.status;
     const data = error?.response?.data;
-
     const url = error?.config?.url;
     const method = error?.config?.method;
 
-    console.error("❌ API Error:", {
-      status,
-      url,
-      method,
-      data,
-    });
+    console.error("❌ API Error:", { status, url, method, data });
 
-    // normaliza retorno de erro
     const normalized = {
       success: false,
       status: status || 0,
