@@ -1,0 +1,331 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Box,
+  Paper,
+  Typography,
+  Button,
+  Alert,
+  CircularProgress,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Chip,
+} from '@mui/material';
+import {
+  QrCodeScanner,
+  CameraAlt,
+  Close as CloseIcon,
+  FlashOn,
+  FlashOff,
+  CheckCircle,
+} from '@mui/icons-material';
+
+// Nota: Para um QR Scanner real, você precisaria de uma biblioteca como:
+// @zxing/library ou react-qr-reader
+// Este é um componente simulado para desenvolvimento
+
+const QRScanner = ({ 
+  onScan, 
+  onClose, 
+  open = false,
+  title = "Escanear QR Code",
+  description = "Aponte a câmera para o QR Code",
+  scanButtonText = "Iniciar Escaneamento",
+  showResult = true,
+}) => {
+  const [scanning, setScanning] = useState(false);
+  const [scannedData, setScannedData] = useState(null);
+  const [error, setError] = useState('');
+  const [flash, setFlash] = useState(false);
+  const [scanComplete, setScanComplete] = useState(false);
+  const videoRef = useRef(null);
+
+  const handleScan = () => {
+    setScanning(true);
+    setError('');
+    setScannedData(null);
+    setScanComplete(false);
+    
+    // Simulação de escaneamento
+    setTimeout(() => {
+      const success = Math.random() > 0.3; // 70% de chance de sucesso
+      
+      if (success) {
+        // Simular dados do QR Code
+        const mockData = {
+          type: Math.random() > 0.5 ? 'ROOM' : 'WORKER',
+          id: Math.floor(Math.random() * 100) + 1,
+          name: Math.random() > 0.5 ? `Sala ${Math.floor(Math.random() * 100) + 101}` : `Funcionário ${Math.floor(Math.random() * 100) + 1}`,
+          location: `${Math.floor(Math.random() * 3) + 1}º Andar`,
+          timestamp: new Date().toISOString(),
+          qrCode: `QR-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+        };
+        
+        setScanComplete(true);
+        
+        if (onScan) {
+        }
+      } else {
+        setError('QR Code não reconhecido. Tente novamente.');
+      }
+      
+      setScanning(false);
+    }, 2000);
+  };
+
+  const handleToggleFlash = () => {
+    setFlash(!flash);
+    alert(`Flash ${!flash ? 'ligado' : 'desligado'} (simulação)`);
+  };
+
+  const handleClose = () => {
+    if (onClose) {
+      onClose();
+    }
+  };
+
+  const handleRescan = () => {
+    setScannedData(null);
+    setScanComplete(false);
+    setError('');
+  };
+
+  // Efeito para limpar quando fechar
+  useEffect(() => {
+    if (!open) {
+      setScanning(false);
+      setError('');
+      setFlash(false);
+      setScannedData(null);
+      setScanComplete(false);
+    }
+  }, [open]);
+
+  return (
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{
+        sx: { borderRadius: 3 }
+      }}
+    >
+      <DialogTitle>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            {title}
+          </Typography>
+          <IconButton onClick={handleClose} size="small">
+            <CloseIcon />
+          </IconButton>
+        </Box>
+      </DialogTitle>
+      
+      <DialogContent>
+        <Box sx={{ textAlign: 'center', py: 2 }}>
+          <Typography variant="body1" color="textSecondary" paragraph>
+            {description}
+          </Typography>
+
+          {error && (
+            <Alert severity="error" sx={{ mb: 3 }}>
+              {error}
+            </Alert>
+          )}
+
+          {scanComplete && scannedData && showResult && (
+            <Alert 
+              severity="success" 
+              sx={{ mb: 3 }}
+              icon={<CheckCircle fontSize="inherit" />}
+            >
+              <Typography variant="subtitle2" gutterBottom>
+                QR Code Identificado!
+              </Typography>
+              <Box sx={{ mt: 1 }}>
+                <Chip 
+                  label={scannedData.type === 'ROOM' ? 'Ambiente' : 'Funcionário'} 
+                  size="small" 
+                  color="primary"
+                  sx={{ mr: 1, mb: 1 }}
+                />
+                <Typography variant="body2">
+                  <strong>{scannedData.name}</strong>
+                </Typography>
+                {scannedData.location && (
+                  <Typography variant="caption" color="textSecondary" display="block">
+                    Local: {scannedData.location}
+                  </Typography>
+                )}
+                <Typography variant="caption" color="textSecondary" display="block">
+                  Código: {scannedData.qrCode}
+                </Typography>
+              </Box>
+            </Alert>
+          )}
+
+          {/* Área de visualização da câmera (simulada) */}
+          <Paper
+            sx={{
+              width: 280,
+              height: 280,
+              mx: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              bgcolor: scanning ? '#e3f2fd' : '#f5f5f5',
+              border: '2px dashed #1976d2',
+              borderRadius: 2,
+              position: 'relative',
+              overflow: 'hidden',
+              mb: 3,
+            }}
+          >
+            {scanning ? (
+              <>
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    background: 'linear-gradient(45deg, transparent 49%, #1976d2 49%, #1976d2 51%, transparent 51%)',
+                    backgroundSize: '20px 20px',
+                    animation: 'scan 2s linear infinite',
+                    '@keyframes scan': {
+                      '0%': { transform: 'translateY(-100%)' },
+                      '100%': { transform: 'translateY(100%)' },
+                    },
+                  }}
+                />
+                <CameraAlt sx={{ fontSize: 60, color: '#1976d2', opacity: 0.7 }} />
+              </>
+            ) : (
+              <QrCodeScanner sx={{ fontSize: 80, color: '#1976d2', opacity: 0.7 }} />
+            )}
+            
+            {flash && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  bgcolor: 'rgba(255, 255, 255, 0.3)',
+                }}
+              />
+            )}
+          </Paper>
+
+          <video
+            ref={videoRef}
+            style={{
+              display: 'none', // Escondido em modo simulação
+              width: '100%',
+              maxWidth: '280px',
+              borderRadius: '8px',
+            }}
+          />
+
+          {/* Controles */}
+          <Box sx={{ mt: 2 }}>
+            {!scanning && !scanComplete ? (
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<CameraAlt />}
+                onClick={handleScan}
+                sx={{ minWidth: 200, mb: 2 }}
+              >
+                {scanButtonText}
+              </Button>
+            ) : scanning ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2 }}>
+                <CircularProgress size={24} sx={{ mr: 1 }} />
+                <Typography variant="body1">Escanenando...</Typography>
+              </Box>
+            ) : null}
+            
+            {scanComplete && (
+              <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', mb: 2 }}>
+                <Button
+                  variant="outlined"
+                  onClick={handleRescan}
+                >
+                  Escanear Novamente
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={handleClose}
+                >
+                  Continuar
+                </Button>
+              </Box>
+            )}
+            
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', mt: 1 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={flash ? <FlashOff /> : <FlashOn />}
+                onClick={handleToggleFlash}
+                disabled={scanning}
+              >
+                {flash ? 'Desligar Flash' : 'Ligar Flash'}
+              </Button>
+              
+              <Button
+                variant="text"
+                size="small"
+                onClick={() => {
+                  // Simular leitura de QR Code específico para testes
+                  const testData = {
+                    type: 'ROOM',
+                    id: 2,
+                    name: 'Banheiro Masculino',
+                    location: 'Térreo',
+                    qrCode: 'QR-BATH-M',
+                    timestamp: new Date().toISOString(),
+                  };
+                  setScannedData(testData);
+                  setScanComplete(true);
+                  if (onScan) onScan(testData);
+                }}
+                disabled={scanning}
+              >
+                Teste Rápido
+              </Button>
+            </Box>
+          </Box>
+
+          <Alert severity="info" sx={{ mt: 3 }}>
+            <Typography variant="body2">
+              <strong>Modo Desenvolvimento:</strong> Scanner simulado. 
+              Em produção, integre com biblioteca de QR Code real.
+            </Typography>
+          </Alert>
+        </Box>
+      </DialogContent>
+      
+      <DialogActions sx={{ px: 3, pb: 3 }}>
+        <Button onClick={handleClose} color="inherit">
+          Cancelar
+        </Button>
+        <Button 
+          onClick={handleScan} 
+          variant="contained"
+          disabled={scanning || scanComplete}
+        >
+          {scanning ? 'Escanenando...' : 'Escanear'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
+export default QRScanner;

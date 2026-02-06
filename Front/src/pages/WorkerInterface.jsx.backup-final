@@ -1,0 +1,915 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Container,
+  Paper,
+  Typography,
+  Button,
+  Stepper,
+  Step,
+  StepLabel,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Grid,
+  Card,
+  CardContent,
+  Checkbox,
+  FormGroup,
+  FormControlLabel,
+  TextField,
+  Avatar,
+  Chip,
+  Alert,
+  CircularProgress,
+  Divider,
+  IconButton,
+  Tabs,
+  Tab,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+} from '@mui/material';
+import {
+  QrCodeScanner,
+  Person,
+  CleaningServices,
+  Bathroom,
+  CheckCircle,
+  ArrowForward,
+  ArrowBack,
+  CameraAlt,
+  LocationOn,
+  Restaurant,
+  MeetingRoom,
+  Refresh,
+  ExpandMore,
+  Security,
+  Wash,
+  Inventory,
+} from '@mui/icons-material';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { useAuth } from '../contexts/AuthContext';
+import cleaningService from '../services/cleaningService';
+import roomService from '../services/roomService';
+
+const WorkerInterface = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { user, refreshProfile } = useAuth();
+  
+  const [activeStep, setActiveStep] = useState(0);
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [rooms, setRooms] = useState([]);
+  const [checklist, setChecklist] = useState({});
+  const [notes, setNotes] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
+  const [tabValue, setTabValue] = useState(0);
+  const [cleaningRecordId, setCleaningRecordId] = useState(null);
+
+  // Carregar sala do QR Code se tiver parâmetro
+  useEffect(() => {
+    const roomId = searchParams.get('room');
+    const fromQR = searchParams.get('fromQR');
+    
+    if (roomId && fromQR === 'true') {
+      // Buscar sala pelo ID
+      findRoomById(roomId);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    fetchRooms();
+  }, [tabValue]);
+
+  const findRoomById = async (id) => {
+    try {
+      const response = await roomService.getRoomById(id);
+      if (response.success && response.room) {
+        setSelectedRoom({
+          ...response.room,
+          checklist: getChecklistByType(response.room.type)
+        });
+        setActiveStep(1);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar sala:', error);
+    }
+  };
+
+  const fetchRooms = async () => {
+    try {
+      setLoading(true);
+      setError('');
+
+      let roomType = 'ALL';
+      if (tabValue === 1) roomType = 'ROOM';
+      if (tabValue === 2) roomType = 'BATHROOM';
+      if (tabValue === 3) roomType = 'KITCHEN';
+      if (tabValue === 4) roomType = 'MEETING_ROOM';
+
+      const params = { status: 'PENDING' };
+      if (roomType !== 'ALL') params.type = roomType;
+
+      const response = await roomService.getRooms(params);
+      
+      if (response.success) {
+        setRooms(response.data.map(room => ({
+          ...room,
+          checklist: getChecklistByType(room.type)
+        })));
+      } else {
+        setError('Erro ao carregar salas');
+      }
+    } catch (err) {
+      setError('Erro ao conectar com o servidor');
+      console.error('Erro ao carregar salas:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const response = await roomService.getRooms(params);
+if (response.success) {
+  setRooms(response.data); // As salas já vêm do backend
+}
+
+  // Inicializar checklist quando selecionar sala
+  useEffect(() => {
+    if (selectedRoom && selectedRoom.checklist) {
+      const initialChecklist = {};
+      selectedRoom.checklist.forEach(item => {
+        if (item.type !== 'section') {
+          initialChecklist[item.id] = false;
+        }
+      });
+      setChecklist(initialChecklist);
+    }
+  }, [selectedRoom]);
+
+  const steps = ['Identificação', 'Ambiente', 'Checklist', 'Conclusão'];
+
+  const handleChecklistChange = (itemId) => {
+    setChecklist(prev => ({
+      ...prev,
+      [itemId]: !prev[itemId],
+    }));
+  };
+
+  const handleStartCleaning = async () => {
+    try {
+      setSubmitting(true);
+      setError('');
+
+      const response = await cleaningService.startCleaning(selectedRoom.id);
+      
+      if (response.success && response.record) {
+        setCleaningRecordId(response.record.id);
+        setActiveStep(2);
+      } else {
+        setError(response.error || 'Erro ao iniciar limpeza');
+      }
+    } catch (err) {
+      setError('Erro ao iniciar limpeza');
+      console.error('Erro ao iniciar limpeza:', err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    try {
+      setSubmitting(true);
+      setError('');
+
+      if (!cleaningRecordId) {
+        setError('ID da limpeza não encontrado');
+        return;
+      }
+
+      const response = await cleaningService.completeCleaning(
+        cleaningRecordId,
+        checklist,
+        notes
+      );
+      
+      if (response.success) {
+        setSuccess(true);
+        setActiveStep(3);
+        
+        // Atualizar perfil do usuário
+        await refreshProfile();
+        
+        // Atualizar lista de salas
+        fetchRooms();
+      } else {
+        setError(response.error || 'Erro ao concluir limpeza');
+      }
+    } catch (err) {
+      setError('Erro ao concluir limpeza');
+      console.error('Erro ao concluir limpeza:', err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleNewCleaning = () => {
+    setSelectedRoom(null);
+    setChecklist({});
+    setNotes('');
+    setSuccess(false);
+    setCleaningRecordId(null);
+    setActiveStep(0);
+    setTabValue(0);
+    navigate('/worker');
+  };
+
+  const getRoomIcon = (type) => {
+    switch (type) {
+      case 'BATHROOM': return <Bathroom />;
+      case 'KITCHEN': return <Restaurant />;
+      case 'MEETING_ROOM': return <MeetingRoom />;
+      default: return <CleaningServices />;
+    }
+  };
+
+  const getCategoryIcon = (category) => {
+    switch (category) {
+      case 'cleaning': return <CleaningServices />;
+      case 'safety': return <Security />;
+      case 'supply': return <Inventory />;
+      case 'execution': return <Wash />;
+      case 'header': return null;
+      default: return <CleaningServices />;
+    }
+  };
+
+  const getCategoryColor = (category) => {
+    switch (category) {
+      case 'cleaning': return '#4caf50';
+      case 'safety': return '#ff9800';
+      case 'supply': return '#2196f3';
+      case 'execution': return '#9c27b0';
+      case 'header': return '#2c3e50';
+      default: return '#757575';
+    }
+  };
+
+  const getCategoryName = (category) => {
+    switch (category) {
+      case 'cleaning': return 'Higienização';
+      case 'safety': return 'Segurança';
+      case 'supply': return 'Abastecimento';
+      case 'execution': return 'Execução';
+      default: return category;
+    }
+  };
+
+  const renderStepContent = (step) => {
+    switch (step) {
+      case 0: // Identificação
+        return (
+          <Box sx={{ mt: 3 }}>
+            <Avatar sx={{ width: 80, height: 80, bgcolor: '#1976d2', mx: 'auto', mb: 3 }}>
+              <Person sx={{ fontSize: 40 }} />
+            </Avatar>
+            
+            <Typography variant="h5" gutterBottom align="center">
+              Olá, {user?.name}!
+            </Typography>
+            
+            <Alert severity="info" sx={{ mt: 3 }}>
+              <Typography variant="body2">
+                Você está registrado como <strong>{user?.role === 'CLEANER' ? 'Funcionário de Limpeza' : user?.role}</strong>
+              </Typography>
+            </Alert>
+
+            <Box sx={{ mt: 4, textAlign: 'center' }}>
+              <Button
+                variant="contained"
+                size="large"
+                onClick={() => setActiveStep(1)}
+                endIcon={<ArrowForward />}
+                sx={{ px: 4 }}
+              >
+                Começar Nova Limpeza
+              </Button>
+            </Box>
+          </Box>
+        );
+
+      case 1: // Ambiente
+        return (
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="h5" gutterBottom align="center">
+              Qual ambiente será limpo?
+            </Typography>
+            
+            <Grid container spacing={2} sx={{ mt: 2 }}>
+              <Grid item xs={12}>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  size="large"
+                  startIcon={<QrCodeScanner />}
+                  onClick={() => navigate('/scan')}
+                  sx={{ py: 2, mb: 2, bgcolor: '#1976d2' }}
+                >
+                  Escanear QR Code da Porta
+                </Button>
+                
+                <Divider sx={{ my: 3 }}>
+                  <Typography color="textSecondary">OU</Typography>
+                </Divider>
+                
+                <Typography variant="subtitle1" gutterBottom>
+                  Selecione manualmente:
+                </Typography>
+                
+                <Paper sx={{ p: 2, mt: 2 }}>
+                  <Tabs 
+                    value={tabValue} 
+                    onChange={(e, newValue) => setTabValue(newValue)}
+                    variant="scrollable"
+                    scrollButtons="auto"
+                  >
+                    <Tab label="Todos" />
+                    <Tab label="Salas" icon={<CleaningServices />} />
+                    <Tab label="Banheiros" icon={<Bathroom />} />
+                    <Tab label="Cozinhas" icon={<Restaurant />} />
+                    <Tab label="Reunião" icon={<MeetingRoom />} />
+                  </Tabs>
+                  
+                  <Box sx={{ mt: 2 }}>
+                    {loading ? (
+                      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                        <CircularProgress />
+                      </Box>
+                    ) : error ? (
+                      <Alert severity="error" sx={{ my: 2 }}>
+                        {error}
+                      </Alert>
+                    ) : (
+                      <Grid container spacing={2}>
+                        {rooms.map((room) => (
+                          <Grid item xs={12} sm={6} md={4} key={room.id}>
+                            <Card 
+                              sx={{ 
+                                border: selectedRoom?.id === room.id ? '2px solid #1976d2' : '1px solid #e0e0e0',
+                                cursor: 'pointer',
+                                '&:hover': { 
+                                  borderColor: '#1976d2',
+                                  boxShadow: 2 
+                                },
+                                height: '100%',
+                                display: 'flex',
+                                flexDirection: 'column',
+                              }}
+                              onClick={() => setSelectedRoom(room)}
+                            >
+                              <CardContent sx={{ flexGrow: 1 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                                  <Avatar sx={{ 
+                                    mr: 2, 
+                                    bgcolor: room.type === 'BATHROOM' ? '#2196f3' : 
+                                            room.type === 'KITCHEN' ? '#4caf50' : 
+                                            room.type === 'MEETING_ROOM' ? '#9c27b0' : '#1976d2'
+                                  }}>
+                                    {getRoomIcon(room.type)}
+                                  </Avatar>
+                                  <Box sx={{ flex: 1 }}>
+                                    <Typography variant="subtitle1" fontWeight={600}>
+                                      {room.name}
+                                    </Typography>
+                                    <Typography variant="caption" color="textSecondary">
+                                      <LocationOn fontSize="inherit" sx={{ mr: 0.5 }} />
+                                      {room.location}
+                                    </Typography>
+                                  </Box>
+                                  {selectedRoom?.id === room.id && (
+                                    <CheckCircle sx={{ color: '#4caf50' }} />
+                                  )}
+                                </Box>
+                                <Chip 
+                                  label={room.qrCode ? room.qrCode.substring(0, 10) + '...' : 'N/A'} 
+                                  size="small" 
+                                  variant="outlined"
+                                  sx={{ mt: 1 }}
+                                />
+                                
+                                {/* Mostrar quantos itens no checklist */}
+                                <Box sx={{ mt: 2 }}>
+                                  <Typography variant="caption" color="textSecondary">
+                                    {room.checklist.filter(item => item.type !== 'section').length} itens no checklist
+                                  </Typography>
+                                </Box>
+                              </CardContent>
+                            </Card>
+                          </Grid>
+                        ))}
+                      </Grid>
+                    )}
+                    
+                    {rooms.length === 0 && !loading && (
+                      <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <Typography variant="body1" color="textSecondary">
+                          Nenhuma sala pendente de limpeza
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+                </Paper>
+              </Grid>
+            </Grid>
+          </Box>
+        );
+
+      case 2: // Checklist
+        if (!selectedRoom) return null;
+
+        // Separar seções e itens
+        const sections = [];
+        let currentSection = null;
+        
+        selectedRoom.checklist.forEach((item, index) => {
+          if (item.type === 'section') {
+            if (currentSection) {
+              sections.push(currentSection);
+            }
+            currentSection = {
+              title: item.label,
+              items: []
+            };
+          } else if (currentSection) {
+            currentSection.items.push(item);
+          }
+        });
+        
+        if (currentSection) {
+          sections.push(currentSection);
+        }
+
+        // Calcular progresso por seção
+        const calculateSectionProgress = (sectionItems) => {
+          const items = sectionItems.filter(item => item.type !== 'section');
+          const total = items.length;
+          const completed = items.filter(item => checklist[item.id]).length;
+          return total > 0 ? Math.round((completed / total) * 100) : 0;
+        };
+
+        return (
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="h5" gutterBottom align="center">
+              Checklist de Limpeza
+            </Typography>
+            
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+                {error}
+              </Alert>
+            )}
+
+            <Paper sx={{ p: 3, mt: 2 }}>
+              {/* Cabeçalho do Ambiente */}
+              <Box sx={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                mb: 4, 
+                p: 2, 
+                bgcolor: '#f5f5f5', 
+                borderRadius: 2,
+                flexWrap: 'wrap',
+                gap: 2,
+              }}>
+                <Avatar sx={{ 
+                  width: 56, 
+                  height: 56, 
+                  bgcolor: selectedRoom.type === 'BATHROOM' ? '#2196f3' : 
+                          selectedRoom.type === 'KITCHEN' ? '#4caf50' : 
+                          selectedRoom.type === 'MEETING_ROOM' ? '#9c27b0' : '#1976d2'
+                }}>
+                  {getRoomIcon(selectedRoom.type)}
+                </Avatar>
+                <Box sx={{ flex: 1, minWidth: 200 }}>
+                  <Typography variant="h6">{selectedRoom.name}</Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    <LocationOn fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+                    {selectedRoom.location}
+                  </Typography>
+                  <Typography variant="caption" color="textSecondary">
+                    QR Code: {selectedRoom.qrCode ? selectedRoom.qrCode.substring(0, 15) + '...' : 'N/A'}
+                  </Typography>
+                </Box>
+                <Button
+                  size="small"
+                  startIcon={<Refresh />}
+                  onClick={() => {
+                    const resetChecklist = {};
+                    selectedRoom.checklist.forEach(item => {
+                      if (item.type !== 'section') {
+                        resetChecklist[item.id] = false;
+                      }
+                    });
+                    setChecklist(resetChecklist);
+                  }}
+                  variant="outlined"
+                >
+                  Limpar Tudo
+                </Button>
+              </Box>
+
+              {/* Checklist por Seção */}
+              {sections.map((section, sectionIndex) => {
+                const sectionProgress = calculateSectionProgress(section.items);
+                
+                return (
+                  <Accordion 
+                    key={sectionIndex}
+                    defaultExpanded={true}
+                    sx={{ 
+                      mb: 2,
+                      borderRadius: 1,
+                      '&:before': { display: 'none' },
+                    }}
+                  >
+                    <AccordionSummary
+                      expandIcon={<ExpandMore />}
+                      sx={{ 
+                        bgcolor: '#f8f9fa',
+                        borderRadius: 1,
+                        borderLeft: '4px solid #1976d2',
+                        '&.Mui-expanded': {
+                          minHeight: 48,
+                          bgcolor: '#e3f2fd',
+                        }
+                      }}
+                    >
+                      <Box sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        width: '100%',
+                        justifyContent: 'space-between',
+                      }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                          {section.title}
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <Chip 
+                            label={`${sectionProgress}%`}
+                            size="small"
+                            color={sectionProgress === 100 ? "success" : "primary"}
+                            variant="outlined"
+                          />
+                          <Typography variant="caption" color="textSecondary">
+                            {section.items.filter(item => checklist[item.id]).length}/{section.items.length} itens
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </AccordionSummary>
+                    
+                    <AccordionDetails>
+                      <Grid container spacing={2}>
+                        {section.items.map((item) => {
+                          const categoryColor = getCategoryColor(item.category);
+                          
+                          return (
+                            <Grid item xs={12} sm={6} key={item.id}>
+                              <Card 
+                                variant="outlined"
+                                sx={{ 
+                                  borderLeft: `4px solid ${categoryColor}`,
+                                  bgcolor: checklist[item.id] ? categoryColor + '10' : 'transparent',
+                                  '&:hover': { bgcolor: categoryColor + '05' },
+                                }}
+                              >
+                                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        checked={checklist[item.id] || false}
+                                        onChange={() => handleChecklistChange(item.id)}
+                                        color="primary"
+                                        sx={{ 
+                                          '&.Mui-checked': {
+                                            color: categoryColor,
+                                          }
+                                        }}
+                                      />
+                                    }
+                                    label={
+                                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                        <Box sx={{ 
+                                          width: 24, 
+                                          height: 24, 
+                                          display: 'flex', 
+                                          alignItems: 'center', 
+                                          justifyContent: 'center',
+                                          mr: 1,
+                                          color: categoryColor,
+                                        }}>
+                                          {getCategoryIcon(item.category)}
+                                        </Box>
+                                        <Typography variant="body2">
+                                          {item.label}
+                                          {item.required && (
+                                            <Typography component="span" variant="caption" color="error" sx={{ ml: 0.5 }}>
+                                              *
+                                            </Typography>
+                                          )}
+                                        </Typography>
+                                      </Box>
+                                    }
+                                    sx={{ width: '100%', m: 0 }}
+                                  />
+                                  
+                                  {item.category && item.category !== 'header' && (
+                                    <Chip
+                                      label={getCategoryName(item.category)}
+                                      size="small"
+                                      sx={{ 
+                                        mt: 1,
+                                        bgcolor: categoryColor + '20',
+                                        color: categoryColor,
+                                        height: 20,
+                                        fontSize: '0.65rem',
+                                      }}
+                                    />
+                                  )}
+                                </CardContent>
+                              </Card>
+                            </Grid>
+                          );
+                        })}
+                      </Grid>
+                    </AccordionDetails>
+                  </Accordion>
+                );
+              })}
+
+              {/* Observações */}
+              <Box sx={{ mt: 4, pt: 3, borderTop: '1px solid #e0e0e0' }}>
+                <Typography variant="subtitle1" gutterBottom sx={{ color: '#ff9800', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <span>📝</span> Observações (opcional)
+                </Typography>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={3}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Ex: Faltou material, problema identificado, sugestões, etc."
+                  variant="outlined"
+                />
+                <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
+                  Use este espaço para registrar qualquer observação importante sobre a limpeza.
+                </Typography>
+              </Box>
+            </Paper>
+          </Box>
+        );
+
+      case 3: // Conclusão
+        return (
+          <Box sx={{ mt: 3, textAlign: 'center' }}>
+            {success ? (
+              <>
+                <Avatar sx={{ width: 100, height: 100, bgcolor: '#4caf50', mx: 'auto', mb: 3 }}>
+                  <CheckCircle sx={{ fontSize: 50 }} />
+                </Avatar>
+                
+                <Typography variant="h3" gutterBottom sx={{ color: '#4caf50', fontWeight: 700 }}>
+                  Limpeza Registrada!
+                </Typography>
+                
+                <Typography variant="h6" gutterBottom sx={{ color: '#666', mb: 4 }}>
+                  {selectedRoom?.name} • {format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
+                </Typography>
+                
+                <Paper sx={{ p: 4, maxWidth: 600, mx: 'auto', mb: 4, borderRadius: 3 }}>
+                  <Grid container spacing={3}>
+                    <Grid item xs={12} md={6}>
+                      <Card variant="outlined" sx={{ p: 2, height: '100%' }}>
+                        <Typography variant="subtitle2" color="textSecondary" gutterBottom>
+                          Funcionário
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Avatar sx={{ width: 48, height: 48, mr: 2, bgcolor: '#4caf50' }}>
+                            {user?.name?.charAt(0)}
+                          </Avatar>
+                          <Typography variant="h6">{user?.name}</Typography>
+                        </Box>
+                      </Card>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <Card variant="outlined" sx={{ p: 2, height: '100%' }}>
+                        <Typography variant="subtitle2" color="textSecondary" gutterBottom>
+                          Ambiente
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Avatar sx={{ 
+                            width: 48, 
+                            height: 48, 
+                            mr: 2, 
+                            bgcolor: selectedRoom?.type === 'BATHROOM' ? '#2196f3' : 
+                                    selectedRoom?.type === 'KITCHEN' ? '#4caf50' : 
+                                    selectedRoom?.type === 'MEETING_ROOM' ? '#9c27b0' : '#1976d2'
+                          }}>
+                            {selectedRoom && getRoomIcon(selectedRoom.type)}
+                          </Avatar>
+                          <Box>
+                            <Typography variant="h6">{selectedRoom?.name}</Typography>
+                            <Typography variant="caption" color="textSecondary">
+                              {selectedRoom?.location}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Card>
+                    </Grid>
+                    
+                    {/* Resumo por Seção */}
+                    {selectedRoom?.checklist
+                      .filter(item => item.type === 'section')
+                      .map((section, index) => {
+                        const sectionItems = selectedRoom.checklist.filter(
+                          item => item.type !== 'section' && 
+                          selectedRoom.checklist.slice(0, selectedRoom.checklist.indexOf(item))
+                            .reverse()
+                            .find(i => i.type === 'section')?.label === section.label
+                        );
+                        
+                        const completed = sectionItems.filter(item => checklist[item.id]).length;
+                        const total = sectionItems.length;
+                        
+                        return (
+                          <Grid item xs={12} key={index}>
+                            <Card variant="outlined" sx={{ p: 2 }}>
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                                <Typography variant="subtitle2">{section.label}</Typography>
+                                <Chip 
+                                  label={`${completed}/${total}`}
+                                  size="small"
+                                  color={completed === total ? "success" : "primary"}
+                                />
+                              </Box>
+                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                {sectionItems.map(item => (
+                                  <Chip
+                                    key={item.id}
+                                    label={item.label}
+                                    size="small"
+                                    variant="outlined"
+                                    color={checklist[item.id] ? "success" : "default"}
+                                    sx={{ mb: 0.5 }}
+                                  />
+                                ))}
+                              </Box>
+                            </Card>
+                          </Grid>
+                        );
+                      })
+                    }
+                    
+                    {notes && (
+                      <Grid item xs={12}>
+                        <Card variant="outlined" sx={{ p: 3, bgcolor: '#fff3e0' }}>
+                          <Typography variant="subtitle2" color="textSecondary" gutterBottom>
+                            Observações
+                          </Typography>
+                          <Typography variant="body1">{notes}</Typography>
+                        </Card>
+                      </Grid>
+                    )}
+                  </Grid>
+                </Paper>
+                
+                <Box sx={{ display: 'flex', gap: 3, justifyContent: 'center', mt: 2, flexWrap: 'wrap' }}>
+                  <Button
+                    variant="outlined"
+                    size="large"
+                    onClick={handleNewCleaning}
+                    sx={{ px: 4 }}
+                  >
+                    Nova Limpeza
+                  </Button>
+                  <Button
+                    variant="contained"
+                    size="large"
+                    onClick={() => window.print()}
+                    sx={{ px: 4, bgcolor: '#1976d2' }}
+                  >
+                    Imprimir Comprovante
+                  </Button>
+                </Box>
+              </>
+            ) : (
+              <CircularProgress size={60} />
+            )}
+          </Box>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Paper sx={{ p: { xs: 2, md: 4 }, borderRadius: 3 }}>
+        {/* Cabeçalho */}
+        <Box sx={{ textAlign: 'center', mb: 4 }}>
+          <Avatar sx={{ width: 70, height: 70, bgcolor: '#1976d2', mx: 'auto', mb: 2 }}>
+            <CleaningServices sx={{ fontSize: 36 }} />
+          </Avatar>
+          <Typography variant="h3" sx={{ fontWeight: 700, color: '#2c3e50', mb: 1 }}>
+            Sistema de Registro de Limpeza
+          </Typography>
+          <Typography variant="body1" color="textSecondary">
+            Registre suas limpezas de forma rápida e simples
+          </Typography>
+          
+          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <Chip 
+              label="Funcionário" 
+              color="primary" 
+              variant="outlined"
+              icon={<Person />}
+            />
+            <Chip 
+              label="Checklist organizado" 
+              color="info" 
+              variant="outlined"
+            />
+          </Box>
+        </Box>
+
+        {/* Stepper */}
+        <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
+          {steps.map((label) => (
+            <Step key={label}>
+              <StepLabel>{label}</StepLabel>
+            </Step>
+          ))}
+        </Stepper>
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+            {error}
+          </Alert>
+        )}
+
+        {/* Conteúdo do passo atual */}
+        {renderStepContent(activeStep)}
+
+        {/* Navegação */}
+        {activeStep < steps.length - 1 && activeStep !== 3 && (
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
+            <Button
+              disabled={activeStep === 0}
+              onClick={() => setActiveStep(activeStep - 1)}
+              startIcon={<ArrowBack />}
+            >
+              Voltar
+            </Button>
+            
+            <Button
+              variant="contained"
+              onClick={() => {
+                if (activeStep === 0) {
+                  setActiveStep(1);
+                } else if (activeStep === 1) {
+                  if (selectedRoom) {
+                    handleStartCleaning();
+                  } else {
+                    setError('Selecione um ambiente para continuar');
+                  }
+                } else if (activeStep === 2) {
+                  handleSubmit();
+                }
+              }}
+              disabled={
+                (activeStep === 1 && !selectedRoom) ||
+                submitting
+              }
+              endIcon={activeStep === steps.length - 2 ? null : <ArrowForward />}
+              sx={{ 
+                bgcolor: '#1976d2',
+                px: 4,
+              }}
+            >
+              {activeStep === steps.length - 2 ? 'Finalizar Limpeza' : 'Próximo'}
+              {submitting && <CircularProgress size={20} sx={{ ml: 1 }} />}
+            </Button>
+          </Box>
+        )}
+      </Paper>
+    </Container>
+  );
+};
+
+export default WorkerInterface;

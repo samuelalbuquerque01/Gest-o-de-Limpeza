@@ -1,0 +1,405 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Typography,
+  Paper,
+  Grid,
+  Card,
+  CardContent,
+  Button,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  TextField,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Chip,
+  Avatar,
+  LinearProgress,
+  IconButton,
+  Alert,
+  CircularProgress,
+} from '@mui/material';
+import {
+  DateRange,
+  TrendingUp,
+  Assessment,
+  People,
+  Timer,
+  CheckCircle,
+  Warning,
+  Download,
+  Print,
+  FilterList,
+  Refresh,
+} from '@mui/icons-material';
+import reportService from '../services/reportService';
+import { format } from 'date-fns';
+
+const Reports = () => {
+  const [reportType, setReportType] = useState('DAILY');
+  const [dateRange, setDateRange] = useState('THIS_WEEK');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [reportData, setReportData] = useState(null);
+
+  useEffect(() => {
+    fetchReport();
+  }, [reportType, dateRange]);
+
+  const fetchReport = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      let params = { type: reportType };
+      
+      // Calcular datas baseado no período
+      const now = new Date();
+      let startDate, endDate = now;
+      
+      switch (dateRange) {
+        case 'TODAY':
+          startDate = new Date(now.setHours(0, 0, 0, 0));
+          break;
+        case 'YESTERDAY':
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 1);
+          startDate.setHours(0, 0, 0, 0);
+          endDate = new Date(startDate);
+          endDate.setHours(23, 59, 59, 999);
+          break;
+        case 'LAST_7_DAYS':
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 7);
+          break;
+        case 'LAST_30_DAYS':
+          startDate = new Date(now);
+          startDate.setDate(startDate.getDate() - 30);
+          break;
+        default:
+          startDate = null;
+      }
+      
+      if (startDate) {
+        params.startDate = startDate.toISOString();
+        params.endDate = endDate.toISOString();
+      }
+      
+      const response = await reportService.generateReport(params);
+      
+      if (response.success) {
+        setReportData(response.report);
+      } else {
+        setError(response.error || 'Erro ao gerar relatório');
+      }
+    } catch (err) {
+      setError('Erro ao conectar com o servidor');
+      console.error('Erro ao buscar relatório:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const StatCard = ({ title, value, icon, color, subtitle }) => (
+    <Card>
+      <CardContent>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box>
+            <Typography color="textSecondary" variant="body2" gutterBottom>
+              {title}
+            </Typography>
+            <Typography variant="h4" component="div" sx={{ color, fontWeight: 700 }}>
+              {value}
+            </Typography>
+            {subtitle && (
+              <Typography variant="caption" color="textSecondary">
+                {subtitle}
+              </Typography>
+            )}
+          </Box>
+          <Box sx={{ color, fontSize: 40 }}>
+            {icon}
+          </Box>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+
+  const handleExport = async () => {
+    try {
+      const response = await reportService.exportReport(reportData?.metadata?.id || 'latest', 'csv');
+      if (response.success) {
+        // Download do arquivo
+        const blob = new Blob([response.data], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `relatorio-${format(new Date(), 'yyyy-MM-dd')}.csv`;
+        a.click();
+      }
+    } catch (error) {
+      console.error('Erro ao exportar:', error);
+      alert('Erro ao exportar relatório');
+    }
+  };
+
+  if (loading && !reportData) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ flexGrow: 1 }}>
+      {/* Cabeçalho */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+        <Box>
+          <Typography variant="h4" gutterBottom sx={{ fontWeight: 600, color: '#2c3e50' }}>
+            Relatórios e Análises
+          </Typography>
+          <Typography variant="body1" color="textSecondary">
+            {reportData?.metadata?.periodStart 
+              ? `Período: ${format(new Date(reportData.metadata.periodStart), 'dd/MM/yyyy')} - ${format(new Date(reportData.metadata.periodEnd), 'dd/MM/yyyy')}`
+              : 'Análise detalhada do desempenho da limpeza'
+            }
+          </Typography>
+        </Box>
+        
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<FilterList />}
+          >
+            Filtros
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<Print />}
+          >
+            Imprimir
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<Download />}
+            onClick={handleExport}
+            sx={{ bgcolor: '#1976d2' }}
+          >
+            Exportar
+          </Button>
+        </Box>
+      </Box>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>
+          {error}
+        </Alert>
+      )}
+
+      {/* Filtros */}
+      <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} md={4}>
+            <FormControl fullWidth>
+              <InputLabel>Tipo de Relatório</InputLabel>
+              <Select
+                value={reportType}
+                label="Tipo de Relatório"
+                onChange={(e) => setReportType(e.target.value)}
+                disabled={loading}
+              >
+                <MenuItem value="DAILY">Diário</MenuItem>
+                <MenuItem value="WEEKLY">Semanal</MenuItem>
+                <MenuItem value="MONTHLY">Mensal</MenuItem>
+                <MenuItem value="CUSTOM">Personalizado</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <FormControl fullWidth>
+              <InputLabel>Período</InputLabel>
+              <Select
+                value={dateRange}
+                label="Período"
+                onChange={(e) => setDateRange(e.target.value)}
+                disabled={loading}
+              >
+                <MenuItem value="TODAY">Hoje</MenuItem>
+                <MenuItem value="YESTERDAY">Ontem</MenuItem>
+                <MenuItem value="LAST_7_DAYS">Últimos 7 dias</MenuItem>
+                <MenuItem value="LAST_30_DAYS">Últimos 30 dias</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <Button
+              fullWidth
+              variant="outlined"
+              startIcon={<Refresh />}
+              onClick={fetchReport}
+              disabled={loading}
+            >
+              {loading ? 'Gerando...' : 'Atualizar'}
+            </Button>
+          </Grid>
+        </Grid>
+      </Paper>
+
+      {reportData ? (
+        <>
+          {/* Estatísticas Principais */}
+          <Grid container spacing={3} sx={{ mb: 4 }}>
+            <Grid item xs={12} sm={6} md={3}>
+              <StatCard
+                title="Total de Limpezas"
+                value={reportData.summary.totalCleanings || 0}
+                icon={<Assessment />}
+                color="#1976d2"
+                subtitle={`no período`}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <StatCard
+                title="Tempo Médio"
+                value={`${reportData.summary.avgDuration || 0}min`}
+                icon={<Timer />}
+                color="#4caf50"
+                subtitle="por limpeza"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <StatCard
+                title="Taxa de Conclusão"
+                value={`${reportData.summary.completionRate || 0}%`}
+                icon={<TrendingUp />}
+                color="#ff9800"
+                subtitle="de eficiência"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <StatCard
+                title="Salas Únicas"
+                value={reportData.summary.uniqueRooms || 0}
+                icon={<Warning />}
+                color="#f44336"
+                subtitle="limpas"
+              />
+            </Grid>
+          </Grid>
+
+          {/* Grid de Conteúdo */}
+          <Grid container spacing={3}>
+            {/* Top Funcionários */}
+            {reportData.statistics?.topCleaners && reportData.statistics.topCleaners.length > 0 && (
+              <Grid item xs={12} md={6}>
+                <Paper sx={{ p: 3, borderRadius: 2, height: '100%' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      ��� Top Funcionários
+                    </Typography>
+                    <Chip label="Eficiência" color="primary" size="small" />
+                  </Box>
+                  
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Funcionário</TableCell>
+                          <TableCell align="center">Limpezas</TableCell>
+                          <TableCell align="center">Tempo Médio</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {reportData.statistics.topCleaners.map((cleaner, index) => (
+                          <TableRow key={cleaner.id || index} hover>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                <Avatar sx={{ width: 32, height: 32, mr: 2, bgcolor: '#1976d2' }}>
+                                  {cleaner.name?.split(' ').map(n => n[0]).join('') || '?'}
+                                </Avatar>
+                                <Typography variant="body2">{cleaner.name || 'N/A'}</Typography>
+                              </Box>
+                            </TableCell>
+                            <TableCell align="center">
+                              <Chip label={cleaner.cleanings || 0} size="small" />
+                            </TableCell>
+                            <TableCell align="center">
+                              <Typography variant="body2">{cleaner.avgDuration || 0} min</Typography>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Paper>
+              </Grid>
+            )}
+
+            {/* Por Tipo de Sala */}
+            {reportData.statistics?.byRoomType && reportData.statistics.byRoomType.length > 0 && (
+              <Grid item xs={12} md={6}>
+                <Paper sx={{ p: 3, borderRadius: 2, height: '100%' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      ��� Por Tipo de Ambiente
+                    </Typography>
+                    <Chip label="Distribuição" color="secondary" size="small" />
+                  </Box>
+                  
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Tipo</TableCell>
+                          <TableCell align="center">Limpezas</TableCell>
+                          <TableCell align="center">Tempo Médio</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {reportData.statistics.byRoomType.map((roomType, index) => (
+                          <TableRow key={roomType.type || index} hover>
+                            <TableCell>
+                              <Typography variant="body2">
+                                {roomType.type === 'ROOM' ? 'Sala' :
+                                 roomType.type === 'BATHROOM' ? 'Banheiro' :
+                                 roomType.type === 'KITCHEN' ? 'Cozinha' : 'Sala Reunião'}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="center">
+                              <Chip label={roomType.count || 0} size="small" color="primary" />
+                            </TableCell>
+                            <TableCell align="center">
+                              <Typography variant="body2">{roomType.avgDuration || 0} min</Typography>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Paper>
+              </Grid>
+            )}
+          </Grid>
+        </>
+      ) : (
+        <Paper sx={{ p: 4, textAlign: 'center' }}>
+          <Typography variant="h6" color="textSecondary">
+            Nenhum dado disponível
+          </Typography>
+          <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+            Selecione um período e clique em "Atualizar" para gerar relatório
+          </Typography>
+        </Paper>
+      )}
+    </Box>
+  );
+};
+
+export default Reports;

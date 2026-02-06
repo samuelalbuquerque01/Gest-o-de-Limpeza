@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String    @id @default(uuid())
+  email          String?   @unique  // Opcional para funcionários
+  password       String?   // Opcional para funcionários
+  name           String
+  role           UserRole  @default(CLEANER)
+  status         UserStatus @default(ACTIVE)
+  phone          String?
+  avatar         String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  // Relações
+  cleaningRecords CleaningRecord[]
+  
+  @@index([email])
+  @@index([role])
+}
+
+enum UserRole {
+  ADMIN
+  CLEANER  // Apenas admin e cleaner
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  ON_LEAVE
+}
+
+model Room {
+  id          String    @id @default(uuid())
+  name        String
+  type        RoomType  @default(ROOM)
+  location    String
+  description String?
+  qrCode      String    @unique
+  status      RoomStatus @default(PENDING)
+  priority    Priority  @default(MEDIUM)
+  notes       String?
+  lastCleaned DateTime?
+  nextCleaning DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Relações
+  cleaningRecords CleaningRecord[]
+  
+  @@index([type])
+  @@index([status])
+  @@index([priority])
+}
+
+enum RoomType {
+  ROOM
+  BATHROOM
+  KITCHEN
+  MEETING_ROOM
+}
+
+enum RoomStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  NEEDS_ATTENTION
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model CleaningRecord {
+  id          String    @id @default(uuid())
+  roomId      String
+  cleanerId   String
+  status      CleaningStatus @default(IN_PROGRESS)
+  checklist   Json?
+  notes       String?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Relações
+  room    Room @relation(fields: [roomId], references: [id])
+  cleaner User @relation(fields: [cleanerId], references: [id])
+  
+  @@index([roomId])
+  @@index([cleanerId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+enum CleaningStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Report {
+  id         String    @id @default(uuid())
+  type       ReportType
+  period     String
+  data       Json
+  generatedBy String
+  createdAt  DateTime  @default(now())
+  
+  @@index([type])
+  @@index([createdAt])
+}
+
+enum ReportType {
+  DAILY
+  WEEKLY
+  MONTHLY
+  CUSTOM
+}
