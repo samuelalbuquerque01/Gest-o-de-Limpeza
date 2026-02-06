@@ -26,7 +26,9 @@ function safeUse(basePath, maybeRouter, name) {
   if (!isFn) {
     console.error(`❌ ERRO: ${name} NÃO é middleware/Router válido.`);
     console.error(`   Tipo recebido: ${typeof maybeRouter}`);
-    console.error(`   Dica: confira module.exports em ${name}.js (tem que ser "module.exports = router")`);
+    console.error(
+      `   Dica: confira module.exports em ${name}.js (tem que ser "module.exports = router")`
+    );
     throw new Error(`${name} inválido (não é função)`);
   }
   app.use(basePath, maybeRouter);
@@ -41,8 +43,9 @@ app.use(express.urlencoded({ extended: true }));
 
 // =======================
 // CORS
-// - Em produção (tudo junto), o front chama /api na mesma origem => CORS nem é necessário.
-// - Em dev, libera localhost.
+// - Em produção (tudo junto no Render), o front chama /api na mesma origem.
+//   Então liberamos tudo para não quebrar.
+// - Em dev, restringe para localhost.
 // =======================
 const allowedOrigins = new Set([
   'http://localhost:3000',
@@ -56,13 +59,15 @@ const allowedOrigins = new Set([
 app.use(
   cors({
     origin(origin, cb) {
-      // same-origin ou ferramentas (curl/postman) geralmente não mandam Origin
+      // ✅ Produção: libera (monolito + Render)
+      if (process.env.NODE_ENV === 'production') return cb(null, true);
+
+      // Postman/curl/same-origin podem vir sem Origin
       if (!origin) return cb(null, true);
 
       const normalized = origin.endsWith('/') ? origin.slice(0, -1) : origin;
       if (allowedOrigins.has(normalized)) return cb(null, true);
 
-      // Em produção (tudo junto), se vier origin diferente, bloqueia mesmo.
       console.log('❌ CORS bloqueou origin:', origin);
       return cb(new Error('Not allowed by CORS'));
     },
@@ -149,13 +154,7 @@ app.get('/api/print-qr/:roomId', async (req, res) => {
 
     const room = await prisma.room.findUnique({
       where: { id: roomId },
-      select: {
-        id: true,
-        name: true,
-        type: true,
-        location: true,
-        qrCode: true,
-      },
+      select: { id: true, name: true, type: true, location: true, qrCode: true },
     });
 
     if (!room) return res.status(404).send('Sala não encontrada');
@@ -196,6 +195,7 @@ app.get('/api/print-qr/:roomId', async (req, res) => {
         </body>
       </html>
     `;
+
     res.send(html);
   } catch (error) {
     res.status(500).send('Erro ao gerar página de impressão');
@@ -204,7 +204,6 @@ app.get('/api/print-qr/:roomId', async (req, res) => {
 
 // =======================
 // ✅ SERVIR FRONTEND (React build)
-// Coloque isso ANTES do 404 da API.
 // =======================
 const frontBuildPath = path.join(__dirname, '../../Front/build');
 app.use(express.static(frontBuildPath));
