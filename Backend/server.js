@@ -1,25 +1,26 @@
-// server.js - VERSÃO COMPLETA (corrigida de verdade)
+// server.js - pronto para Render (0.0.0.0 + process.env.PORT)
 require('dotenv').config();
+
 const config = require('./config');
-const app = require('./src/app'); // seu app.js (rotas)
+const app = require('./src/app');
 const logger = require('./src/utils/logger');
 
-// ✅ Use o Prisma singleton do seu projeto (não crie outro PrismaClient)
+// Prisma singleton do projeto
 const prisma = require('./src/utils/database');
 
 console.log('='.repeat(60));
 console.log('🚀 INICIANDO SISTEMA DE GESTÃO DE LIMPEZA');
 console.log('='.repeat(60));
 
-/**
- * Função para iniciar o servidor
- */
 async function startServer() {
   try {
+    const PORT = process.env.PORT || config?.app?.port || 5000;
+    const HOST = '0.0.0.0';
+
     console.log('📝 Configurações carregadas:');
-    console.log(`- Porta: ${config.app.port}`);
-    console.log(`- Ambiente: ${config.nodeEnv}`);
-    console.log(`- Banco de dados: ${config.database.url ? 'Configurado' : 'Não configurado'}`);
+    console.log(`- Porta: ${PORT}`);
+    console.log(`- Ambiente: ${process.env.NODE_ENV || config?.nodeEnv || 'development'}`);
+    console.log(`- Banco de dados: ${process.env.DATABASE_URL ? 'Configurado' : 'Não configurado'}`);
 
     // Conectar ao banco de dados
     await prisma.$connect();
@@ -31,32 +32,25 @@ async function startServer() {
       console.log(`✅ Banco OK: ${userCount} usuários encontrados`);
     } catch (dbError) {
       console.error('❌ Erro no banco de dados:', dbError.message);
-      console.log('📋 Execute as migrações: npx prisma migrate dev --name init');
+      console.log('📋 Execute as migrações: npx prisma migrate deploy');
     }
 
-    // Iniciar servidor
-    const PORT = config.app.port;
-    const server = app.listen(PORT, 'localhost', () => {
+    // Iniciar servidor (Render precisa 0.0.0.0 + PORT)
+    const server = app.listen(PORT, HOST, () => {
       console.log('\n' + '='.repeat(60));
       console.log('🎉 BACKEND INICIADO COM SUCESSO!');
       console.log('='.repeat(60));
-      console.log(`📡 URL: http://localhost:${PORT}`);
-      console.log(`🩺 Health Check: http://localhost:${PORT}/api/health`);
-      console.log(`👥 Cleaners: http://localhost:${PORT}/api/cleaners`);
-      console.log(`🚪 Rooms: http://localhost:${PORT}/api/rooms/available`);
-      console.log(`🧹 Start Cleaning: POST http://localhost:${PORT}/api/cleaning/start`);
-      console.log(`✅ Complete Cleaning: POST http://localhost:${PORT}/api/cleaning/complete`);
-      console.log(`📊 Cleaning History: GET http://localhost:${PORT}/api/cleaning/history`);
-      console.log(`🔐 Admin Login: POST http://localhost:${PORT}/api/auth/login`);
-      console.log('='.repeat(60));
-      console.log('⚙️  Para parar: Ctrl+C');
+      console.log(`📡 Escutando em: http://${HOST}:${PORT}`);
+      console.log(`🩺 Health Check: http://${HOST}:${PORT}/api/health`);
       console.log('='.repeat(60));
 
-      // Testar rotas automaticamente (1x, sem TIMEOUT fantasma)
-      setTimeout(() => {
-        console.log('\n🔍 Testando rotas principais...');
-        testRoutes(PORT);
-      }, 800);
+      // Testar rotas automaticamente só em DEV
+      if (process.env.NODE_ENV !== 'production') {
+        setTimeout(() => {
+          console.log('\n🔍 Testando rotas principais...');
+          testRoutes(PORT);
+        }, 800);
+      }
     });
 
     // Graceful shutdown
@@ -110,7 +104,7 @@ async function startServer() {
 }
 
 /**
- * ✅ Testar rotas automaticamente (sem TIMEOUT depois do 200)
+ * Testar rotas automaticamente (apenas DEV)
  */
 function testRoutes(port) {
   const http = require('http');
@@ -133,24 +127,20 @@ function testRoutes(port) {
 
     if (completed === total) {
       console.log(`\n📊 Resultado: ${passed}/${total} testes passaram`);
-      if (passed === total) {
-        console.log('🎉 Todas as rotas estão funcionando!');
-      } else {
-        console.log('⚠️  Algumas rotas podem estar com problemas');
-      }
+      if (passed === total) console.log('🎉 Todas as rotas estão funcionando!');
+      else console.log('⚠️  Algumas rotas podem estar com problemas');
     }
   };
 
   routes.forEach((route) => {
     const options = {
-      hostname: 'localhost',
+      hostname: '127.0.0.1',
       port,
       path: route.path,
       method: route.method,
     };
 
     const req = http.request(options, (res) => {
-      // ✅ MUITO IMPORTANTE: consumir/fechar o response para não ficar pendurado
       res.on('data', () => {});
       res.on('end', () => {
         const ok = res.statusCode === 200;
@@ -159,10 +149,7 @@ function testRoutes(port) {
       res.resume();
     });
 
-    // ✅ timeout real do request
-    req.setTimeout(5000, () => {
-      req.destroy(new Error('TIMEOUT'));
-    });
+    req.setTimeout(5000, () => req.destroy(new Error('TIMEOUT')));
 
     req.on('error', (err) => {
       const code = err?.message === 'TIMEOUT' ? 'TIMEOUT' : err.code || err.message;
