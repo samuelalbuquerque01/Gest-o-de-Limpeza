@@ -48,16 +48,16 @@ class QRController {
         console.log(`✅ QR Code gerado: ${qrCode}`);
       }
 
-      // ✅ BASE URL - usar ambiente ou inferir da requisição
+      // ✅ BASE URL - IMPORTANTE: deve ter http:// ou https://
       let baseURL = process.env.APP_URL;
       if (!baseURL) {
         baseURL = `${req.protocol}://${req.get('host')}`;
       }
       
       // ✅ URL que será aberta no celular
-      const appURL = `${baseURL}/scan?qr=${encodeURIComponent(qrCode)}&roomId=${roomId}`;
+      const qrURL = `${baseURL}/scan?qr=${encodeURIComponent(qrCode)}&roomId=${room.id}`;
       
-      // ✅ Dados para o QR Code (incluindo URLs)
+      // ✅ Dados para o QR Code
       const qrData = {
         type: 'ROOM',
         roomId: room.id,
@@ -67,16 +67,14 @@ class QRController {
         qrCode: qrCode,
         status: room.status,
         timestamp: Date.now(),
-        checksum: crypto
-          .createHash('md5')
-          .update(`${room.id}:${room.name}:${Date.now()}`)
-          .digest('hex'),
         system: 'Neuropsicocentro Cleaning System',
-        url: appURL // ✅ URL incluída aqui
+        url: qrURL  // ✅ URL INCLUÍDA AQUI
       };
 
-      // ✅ Conteúdo do QR Code - URL primeiro (para o celular abrir)
-      const qrContent = `${appURL}\n\n--- DADOS DA SALA ---\n${JSON.stringify(qrData, null, 2)}`;
+      // ✅ Conteúdo do QR Code: URL primeiro (para celular abrir automaticamente)
+      const qrContent = `${qrURL}\n\n--- DADOS DA SALA ---\n${JSON.stringify(qrData, null, 2)}`;
+
+      console.log(`🔗 URL no QR Code: ${qrURL}`);
 
       // Gerar QR Code como imagem
       let qrImage;
@@ -102,8 +100,7 @@ class QRController {
         });
       }
 
-      console.log(`✅ QR Code com URL gerado para ${room.name}`);
-      console.log(`🔗 URL para celular: ${appURL}`);
+      console.log(`✅ QR Code gerado com sucesso para ${room.name}`);
 
       return res.json({
         success: true,
@@ -112,13 +109,14 @@ class QRController {
           qrCode: qrCode,
           qrImage: qrImage,
           qrData: qrData,
+          qrContent: qrContent,  // ✅ Retorna o conteúdo para debug
           urls: {
-            app: appURL,
-            print: `${baseURL}/api/print-qr/${roomId}`,
+            app: qrURL,
+            scan: `${baseURL}/scan?qr=${encodeURIComponent(qrCode)}`,
             redirect: `${baseURL}/qr/redirect?code=${encodeURIComponent(qrCode)}`
           },
           generatedAt: new Date().toISOString(),
-          instructions: 'Escaneie no celular para abrir a aplicação'
+          instructions: 'Escaneie no celular para abrir a aplicação automaticamente'
         }
       });
     } catch (error) {
@@ -132,15 +130,15 @@ class QRController {
   }
 
   /**
-   * ✅ DOWNLOAD QR CODE
-   * GET /api/qr/download/:roomId
+   * ✅ GERAR QR CODE COM URL APENAS (para celular)
+   * POST /api/qr/generate-url-only/:roomId
    */
-  static async downloadQRCode(req, res) {
+  static async generateQRCodeUrlOnly(req, res) {
     try {
       const { roomId } = req.params;
-      const { format = 'png', size = 300 } = req.query;
+      const { size = 300, format = 'png' } = req.body;
 
-      console.log(`⬇️ Baixando QR Code para sala: ${roomId}`);
+      console.log(`🔳 Gerando QR Code (URL apenas) para sala: ${roomId}`);
 
       const room = await prisma.room.findUnique({
         where: { id: roomId },
@@ -160,7 +158,101 @@ class QRController {
         });
       }
 
-      // Usar QR Code existente ou gerar um
+      let qrCode = room.qrCode;
+      if (!qrCode) {
+        qrCode = this.generateUniqueQRCode(room);
+        await prisma.room.update({
+          where: { id: roomId },
+          data: { qrCode }
+        });
+      }
+
+      // Base URL
+      let baseURL = process.env.APP_URL;
+      if (!baseURL) {
+        baseURL = `${req.protocol}://${req.get('host')}`;
+      }
+      
+      // URL que será aberta no celular
+      const qrURL = `${baseURL}/scan?qr=${encodeURIComponent(qrCode)}&roomId=${room.id}`;
+
+      console.log(`🔗 QR Code URL: ${qrURL}`);
+
+      // Gerar QR Code APENAS com a URL
+      let qrImage;
+      if (format === 'svg') {
+        qrImage = await QRCode.toString(qrURL, {
+          type: 'svg',
+          margin: 2,
+          width: parseInt(size),
+          color: {
+            dark: '#1976d2',
+            light: '#ffffff'
+          }
+        });
+      } else {
+        qrImage = await QRCode.toDataURL(qrURL, {
+          errorCorrectionLevel: 'H',
+          margin: 2,
+          width: parseInt(size),
+          color: {
+            dark: '#1976d2',
+            light: '#ffffff'
+          }
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          room,
+          qrCode: qrCode,
+          qrImage: qrImage,
+          url: qrURL,
+          content: qrURL,  // ✅ O conteúdo é APENAS a URL
+          generatedAt: new Date().toISOString(),
+          message: 'QR Code contém apenas URL para abrir no celular'
+        }
+      });
+    } catch (error) {
+      console.error('🔥 Erro ao gerar QR Code (URL apenas):', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao gerar QR Code',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * ✅ DOWNLOAD QR CODE
+   * GET /api/qr/download/:roomId
+   */
+  static async downloadQRCode(req, res) {
+    try {
+      const { roomId } = req.params;
+      const { format = 'png', size = 300, type = 'url-only' } = req.query;
+
+      console.log(`⬇️ Baixando QR Code para sala: ${roomId}, tipo: ${type}`);
+
+      const room = await prisma.room.findUnique({
+        where: { id: roomId },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          location: true,
+          qrCode: true
+        }
+      });
+
+      if (!room) {
+        return res.status(404).json({
+          success: false,
+          message: 'Sala não encontrada'
+        });
+      }
+
       let qrCode = room.qrCode;
       if (!qrCode) {
         qrCode = this.generateUniqueQRCode(room);
@@ -168,10 +260,24 @@ class QRController {
 
       // Base URL
       const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-      const appURL = `${baseURL}/scan?qr=${encodeURIComponent(qrCode)}&roomId=${roomId}`;
+      const qrURL = `${baseURL}/scan?qr=${encodeURIComponent(qrCode)}&roomId=${room.id}`;
 
-      // Conteúdo do QR Code
-      const qrContent = appURL;
+      // Conteúdo do QR Code baseado no tipo
+      let qrContent;
+      if (type === 'url-only') {
+        qrContent = qrURL;  // Apenas URL
+      } else {
+        // URL + dados
+        const qrData = {
+          roomId: room.id,
+          roomName: room.name,
+          roomType: room.type,
+          location: room.location,
+          qrCode: qrCode,
+          url: qrURL
+        };
+        qrContent = `${qrURL}\n\n--- DADOS ---\n${JSON.stringify(qrData, null, 2)}`;
+      }
 
       const fileName = `QR-${room.name.replace(/\s+/g, '-')}-${room.id}`;
 
@@ -220,7 +326,7 @@ class QRController {
    */
   static async generateBatchQRCodes(req, res) {
     try {
-      const { roomIds = [], size = 200, format = 'png' } = req.body;
+      const { roomIds = [], size = 200, format = 'png', type = 'url-only' } = req.body;
 
       if (!Array.isArray(roomIds) || roomIds.length === 0) {
         return res.status(400).json({
@@ -229,7 +335,7 @@ class QRController {
         });
       }
 
-      console.log(`🔳 Gerando lote de QR Codes para ${roomIds.length} salas`);
+      console.log(`🔳 Gerando lote de QR Codes para ${roomIds.length} salas, tipo: ${type}`);
 
       const rooms = await prisma.room.findMany({
         where: { id: { in: roomIds } },
@@ -242,6 +348,7 @@ class QRController {
         }
       });
 
+      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
       const results = await Promise.all(
         rooms.map(async (room) => {
           try {
@@ -254,13 +361,27 @@ class QRController {
               });
             }
 
-            // Base URL
-            const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-            const appURL = `${baseURL}/scan?qr=${encodeURIComponent(qrCode)}&roomId=${room.id}`;
+            const qrURL = `${baseURL}/scan?qr=${encodeURIComponent(qrCode)}&roomId=${room.id}`;
+
+            // Conteúdo baseado no tipo
+            let qrContent;
+            if (type === 'url-only') {
+              qrContent = qrURL;
+            } else {
+              const qrData = {
+                roomId: room.id,
+                roomName: room.name,
+                roomType: room.type,
+                location: room.location,
+                qrCode: qrCode,
+                url: qrURL
+              };
+              qrContent = `${qrURL}\n\n--- DADOS ---\n${JSON.stringify(qrData, null, 2)}`;
+            }
 
             let qrImage;
             if (format === 'svg') {
-              qrImage = await QRCode.toString(appURL, {
+              qrImage = await QRCode.toString(qrContent, {
                 type: 'svg',
                 margin: 1,
                 width: parseInt(size),
@@ -270,7 +391,7 @@ class QRController {
                 }
               });
             } else {
-              qrImage = await QRCode.toDataURL(appURL, {
+              qrImage = await QRCode.toDataURL(qrContent, {
                 errorCorrectionLevel: 'H',
                 margin: 1,
                 width: parseInt(size),
@@ -291,7 +412,8 @@ class QRController {
               },
               qrCode,
               qrImage,
-              downloadUrl: `/api/qr/download/${room.id}?format=${format}&size=${size}`
+              qrContent: qrContent,  // Para debug
+              downloadUrl: `/api/qr/download/${room.id}?format=${format}&size=${size}&type=${type}`
             };
           } catch (error) {
             console.error(`🔥 Erro ao gerar QR para sala ${room.id}:`, error);
@@ -319,6 +441,7 @@ class QRController {
           total: results.length,
           success: successCount,
           failed: failedCount,
+          type: type,
           timestamp: new Date().toISOString()
         }
       });
@@ -328,140 +451,6 @@ class QRController {
         success: false,
         message: 'Erro ao gerar QR Codes em lote',
         error: error.message
-      });
-    }
-  }
-
-  /**
-   * ✅ GERAR QR CODE PARA FUNCIONÁRIO
-   * POST /api/qr/generate-user/:userId
-   */
-  static async generateUserQRCode(req, res) {
-    try {
-      const { userId } = req.params;
-      const { size = 300 } = req.body;
-
-      console.log(`👤 Gerando QR Code para usuário: ${userId}`);
-
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          status: true
-        }
-      });
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'Usuário não encontrado'
-        });
-      }
-
-      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-      const userURL = `${baseURL}/user/${userId}/profile`;
-
-      const qrData = {
-        type: 'USER',
-        userId: user.id,
-        userName: user.name,
-        userEmail: user.email,
-        userRole: user.role,
-        userStatus: user.status,
-        timestamp: Date.now(),
-        url: userURL
-      };
-
-      const qrContent = userURL;
-
-      const qrImage = await QRCode.toDataURL(qrContent, {
-        errorCorrectionLevel: 'H',
-        margin: 2,
-        width: parseInt(size),
-        color: {
-          dark: '#4caf50',
-          light: '#ffffff'
-        }
-      });
-
-      console.log(`✅ QR Code de usuário gerado para ${user.name}`);
-
-      return res.json({
-        success: true,
-        data: {
-          user,
-          qrImage,
-          qrData,
-          downloadUrl: `/api/qr/download-user/${userId}?size=${size}`,
-          generatedAt: new Date().toISOString()
-        }
-      });
-    } catch (error) {
-      console.error('🔥 Erro ao gerar QR Code de usuário:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Erro ao gerar QR Code de usuário',
-        error: error.message
-      });
-    }
-  }
-
-  /**
-   * ✅ DOWNLOAD QR CODE DE USUÁRIO
-   * GET /api/qr/download-user/:userId
-   */
-  static async downloadUserQRCode(req, res) {
-    try {
-      const { userId } = req.params;
-      const { size = 300 } = req.query;
-
-      console.log(`⬇️ Baixando QR Code para usuário: ${userId}`);
-
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true
-        }
-      });
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'Usuário não encontrado'
-        });
-      }
-
-      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-      const userURL = `${baseURL}/user/${userId}/profile`;
-
-      const qrContent = userURL;
-
-      const fileName = `QR-USER-${user.name.replace(/\s+/g, '-')}-${user.id}`;
-
-      const pngBuffer = await QRCode.toBuffer(qrContent, {
-        errorCorrectionLevel: 'H',
-        margin: 2,
-        width: parseInt(size),
-        color: {
-          dark: '#4caf50',
-          light: '#ffffff'
-        }
-      });
-
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Content-Disposition', `attachment; filename="${fileName}.png"`);
-      return res.send(pngBuffer);
-    } catch (error) {
-      console.error('🔥 Erro ao baixar QR Code de usuário:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Erro ao baixar QR Code de usuário'
       });
     }
   }
@@ -514,6 +503,9 @@ class QRController {
           });
         }
 
+        const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+        const qrURL = `${baseURL}/scan?qr=${encodeURIComponent(qrCode)}&roomId=${room.id}`;
+
         data = {
           type: 'ROOM',
           roomId: room.id,
@@ -522,6 +514,7 @@ class QRController {
           location: room.location,
           status: room.status,
           qrCode: room.qrCode,
+          url: qrURL,  // ✅ URL incluída
           valid: true,
           message: 'QR Code válido para sala'
         };
@@ -540,11 +533,13 @@ class QRController {
         message: isValidType && hasRequiredFields ? 'QR Code válido' : 'QR Code com formato inválido',
         validation: {
           type: data.type,
+          hasUrl: !!data.url,  // ✅ Verifica se tem URL
           timestamp: new Date().toISOString(),
           checks: {
             typeValid: isValidType,
             fieldsComplete: hasRequiredFields,
-            systemMatch: data.system ? data.system.includes('Neuropsicocentro') : false
+            systemMatch: data.system ? data.system.includes('Neuropsicocentro') : false,
+            hasValidUrl: data.url && data.url.startsWith('http')
           }
         }
       });
@@ -624,10 +619,12 @@ class QRController {
 
       const generated = [];
       const failed = [];
+      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
 
       for (const room of roomsWithoutQR) {
         try {
           const qrCode = this.generateUniqueQRCode(room);
+          const qrURL = `${baseURL}/scan?qr=${encodeURIComponent(qrCode)}&roomId=${room.id}`;
           
           await prisma.room.update({
             where: { id: room.id },
@@ -637,10 +634,12 @@ class QRController {
           generated.push({
             roomId: room.id,
             roomName: room.name,
-            qrCode
+            qrCode,
+            url: qrURL
           });
 
           console.log(`✅ QR Code gerado para ${room.name}: ${qrCode}`);
+          console.log(`🔗 URL: ${qrURL}`);
         } catch (roomError) {
           console.error(`🔥 Erro ao gerar QR para ${room.name}:`, roomError);
           failed.push({
@@ -673,6 +672,179 @@ class QRController {
   }
 
   /**
+   * ✅ REGENERAR TODOS OS QR CODES (ATUALIZAR COM URL)
+   * POST /api/qr/regenerate-all
+   */
+  static async regenerateAllQRCodes(req, res) {
+    try {
+      console.log('🔄 Regenerando TODOS os QR Codes...');
+
+      const rooms = await prisma.room.findMany({
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          location: true,
+          qrCode: true
+        }
+      });
+
+      if (rooms.length === 0) {
+        return res.json({
+          success: true,
+          message: 'Nenhuma sala encontrada',
+          regenerated: 0
+        });
+      }
+
+      console.log(`📊 Total de salas: ${rooms.length}`);
+
+      const results = [];
+      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+
+      for (const room of rooms) {
+        try {
+          const newQRCode = this.generateUniqueQRCode(room);
+          const qrURL = `${baseURL}/scan?qr=${encodeURIComponent(newQRCode)}&roomId=${room.id}`;
+          
+          await prisma.room.update({
+            where: { id: room.id },
+            data: { qrCode: newQRCode }
+          });
+
+          results.push({
+            success: true,
+            roomId: room.id,
+            roomName: room.name,
+            oldQRCode: room.qrCode,
+            newQRCode: newQRCode,
+            url: qrURL,
+            message: 'QR Code regenerado com URL'
+          });
+
+          console.log(`✅ ${room.name}: ${newQRCode}`);
+          console.log(`🔗 URL: ${qrURL}`);
+        } catch (roomError) {
+          console.error(`🔥 Erro ao regenerar QR para ${room.name}:`, roomError);
+          results.push({
+            success: false,
+            roomId: room.id,
+            roomName: room.name,
+            error: roomError.message
+          });
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      const failedCount = results.filter(r => !r.success).length;
+
+      console.log(`🎉 Regeneração concluída: ${successCount} sucessos, ${failedCount} falhas`);
+
+      return res.json({
+        success: true,
+        message: `QR Codes regenerados: ${successCount} sucessos, ${failedCount} falhas`,
+        summary: {
+          total: rooms.length,
+          success: successCount,
+          failed: failedCount,
+          timestamp: new Date().toISOString()
+        },
+        results
+      });
+    } catch (error) {
+      console.error('🔥 Erro ao regenerar QR Codes:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao regenerar QR Codes',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * ✅ VERIFICAR QR CODE DE UMA SALA
+   * GET /api/qr/check/:roomId
+   */
+  static async checkRoomQRCode(req, res) {
+    try {
+      const { roomId } = req.params;
+
+      console.log(`🔍 Verificando QR Code da sala: ${roomId}`);
+
+      const room = await prisma.room.findUnique({
+        where: { id: roomId },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          location: true,
+          qrCode: true,
+          status: true
+        }
+      });
+
+      if (!room) {
+        return res.status(404).json({
+          success: false,
+          message: 'Sala não encontrada'
+        });
+      }
+
+      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      let qrURL = null;
+      let qrContent = null;
+
+      if (room.qrCode) {
+        qrURL = `${baseURL}/scan?qr=${encodeURIComponent(room.qrCode)}&roomId=${room.id}`;
+        
+        // Verificar o que o QR Code atual contém
+        const qrData = {
+          type: 'ROOM',
+          roomId: room.id,
+          roomName: room.name,
+          roomType: room.type,
+          location: room.location,
+          qrCode: room.qrCode,
+          url: qrURL
+        };
+        qrContent = `${qrURL}\n\n--- DADOS ---\n${JSON.stringify(qrData, null, 2)}`;
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          room: {
+            id: room.id,
+            name: room.name,
+            type: room.type,
+            location: room.location,
+            qrCode: room.qrCode,
+            hasQRCode: !!room.qrCode
+          },
+          qrInfo: {
+            url: qrURL,
+            contentPreview: qrContent ? qrContent.substring(0, 200) + '...' : null,
+            hasUrl: !!qrURL,
+            needsRegeneration: !qrURL  // Se não tem URL, precisa regenerar
+          },
+          recommendations: room.qrCode && !qrURL 
+            ? 'O QR Code atual não contém URL. Recomenda-se regenerar.'
+            : room.qrCode 
+            ? 'QR Code atual contém URL. OK para uso.'
+            : 'Sala não possui QR Code. Gere um novo.'
+        }
+      });
+    } catch (error) {
+      console.error('🔥 Erro ao verificar QR Code:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao verificar QR Code',
+        error: error.message
+      });
+    }
+  }
+
+  /**
    * ✅ GERAR RELATÓRIO DE QR CODES
    * GET /api/qr/report
    */
@@ -696,10 +868,28 @@ class QRController {
         orderBy: { name: 'asc' }
       });
 
+      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      
+      const roomsWithUrl = rooms.map(room => {
+        const qrURL = room.qrCode 
+          ? `${baseURL}/scan?qr=${encodeURIComponent(room.qrCode)}&roomId=${room.id}`
+          : null;
+        
+        return {
+          ...room,
+          qrURL,
+          hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
+          hasUrl: !!qrURL,
+          needsRegeneration: room.qrCode && !qrURL
+        };
+      });
+
       const stats = {
         total: rooms.length,
         withQR: rooms.filter(r => r.qrCode && r.qrCode.trim() !== '').length,
         withoutQR: rooms.filter(r => !r.qrCode || r.qrCode.trim() === '').length,
+        withUrl: roomsWithUrl.filter(r => r.hasUrl).length,
+        withoutUrl: roomsWithUrl.filter(r => !r.hasUrl && r.hasQRCode).length,
         byType: {},
         byStatus: {}
       };
@@ -714,32 +904,31 @@ class QRController {
         metadata: {
           generatedAt: new Date().toISOString(),
           system: 'Neuropsicocentro QR Code System',
-          version: '1.0'
+          version: '1.0',
+          baseURL: baseURL
         },
         stats,
-        rooms: rooms.map(room => ({
-          id: room.id,
-          name: room.name,
-          type: room.type,
-          location: room.location,
-          qrCode: room.qrCode || 'NÃO GERADO',
-          hasQR: !!(room.qrCode && room.qrCode.trim() !== ''),
-          status: room.status,
-          lastCleaned: room.lastCleaned,
-          createdAt: room.createdAt,
-          scanUrl: room.qrCode ? `/rooms/qr/${encodeURIComponent(room.qrCode)}` : null
-        }))
+        rooms: roomsWithUrl,
+        recommendations: {
+          needsRegeneration: roomsWithUrl.filter(r => r.needsRegeneration).length > 0
+            ? 'Alguns QR Codes não contêm URL. Execute /api/qr/regenerate-all para atualizar.'
+            : 'Todos os QR Codes estão com URL. OK.',
+          missingQRCodes: stats.withoutQR > 0
+            ? `Existem ${stats.withoutQR} salas sem QR Code. Execute /api/qr/generate-missing.`
+            : 'Todas as salas possuem QR Code.'
+        }
       };
 
       if (format === 'csv') {
         // Gerar CSV
-        const csvHeader = ['ID', 'Nome', 'Tipo', 'Localização', 'QR Code', 'Status', 'Última Limpeza'];
-        const csvRows = rooms.map(room => [
+        const csvHeader = ['ID', 'Nome', 'Tipo', 'Localização', 'QR Code', 'Tem URL?', 'Status', 'Última Limpeza'];
+        const csvRows = roomsWithUrl.map(room => [
           room.id,
           `"${room.name}"`,
           room.type,
           `"${room.location}"`,
           room.qrCode || 'NÃO GERADO',
+          room.hasUrl ? 'SIM' : 'NÃO',
           room.status,
           room.lastCleaned ? new Date(room.lastCleaned).toISOString() : 'NUNCA'
         ]);
@@ -764,260 +953,6 @@ class QRController {
       return res.status(500).json({
         success: false,
         message: 'Erro ao gerar relatório',
-        error: error.message
-      });
-    }
-  }
-
-  /**
-   * ✅ GERAR QR CODE PARA IMPRESSÃO (COM URL)
-   * GET /api/qr/print/:roomId
-   */
-  static async generatePrintableQRCode(req, res) {
-    try {
-      const { roomId } = req.params;
-
-      console.log(`🖨️ Gerando QR Code para impressão: ${roomId}`);
-
-      const room = await prisma.room.findUnique({
-        where: { id: roomId },
-        select: {
-          id: true,
-          name: true,
-          type: true,
-          location: true,
-          qrCode: true,
-          status: true,
-          priority: true
-        }
-      });
-
-      if (!room) {
-        return res.status(404).json({
-          success: false,
-          message: 'Sala não encontrada'
-        });
-      }
-
-      let qrCode = room.qrCode;
-      if (!qrCode) {
-        qrCode = this.generateUniqueQRCode(room);
-        await prisma.room.update({
-          where: { id: roomId },
-          data: { qrCode }
-        });
-      }
-
-      // Base URL
-      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-      const qrURL = `${baseURL}/scan?qr=${encodeURIComponent(qrCode)}&roomId=${roomId}`;
-
-      // HTML para impressão
-      const html = `
-        <!DOCTYPE html>
-        <html lang="pt-BR">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>QR Code - ${room.name}</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              padding: 20px;
-              background: white;
-              text-align: center;
-            }
-            .container {
-              max-width: 600px;
-              margin: 0 auto;
-              padding: 30px;
-              border: 3px solid #1976d2;
-              border-radius: 15px;
-            }
-            .header {
-              margin-bottom: 20px;
-            }
-            .clinic-name {
-              font-size: 14px;
-              color: #666;
-              margin-bottom: 5px;
-            }
-            .system-name {
-              font-size: 18px;
-              font-weight: bold;
-              color: #1976d2;
-            }
-            .room-name {
-              font-size: 28px;
-              font-weight: bold;
-              color: #1976d2;
-              margin: 20px 0;
-              text-transform: uppercase;
-            }
-            .room-info {
-              display: flex;
-              justify-content: center;
-              gap: 15px;
-              margin-bottom: 20px;
-              font-size: 14px;
-            }
-            .room-info-item {
-              padding: 5px 15px;
-              background: #f5f5f5;
-              border-radius: 20px;
-            }
-            .qr-container {
-              margin: 30px auto;
-              padding: 20px;
-              border: 2px solid #ddd;
-              border-radius: 10px;
-              display: inline-block;
-              background: white;
-            }
-            .qr-code-text {
-              font-family: monospace;
-              font-size: 14px;
-              background: #f5f5f5;
-              padding: 10px;
-              border-radius: 5px;
-              margin: 20px 0;
-              word-break: break-all;
-            }
-            .qr-url {
-              font-size: 12px;
-              color: #1976d2;
-              margin: 15px 0;
-              word-break: break-all;
-            }
-            .instructions {
-              margin-top: 25px;
-              padding-top: 15px;
-              border-top: 1px dashed #ddd;
-              font-size: 13px;
-              color: #666;
-              line-height: 1.6;
-            }
-            .footer {
-              margin-top: 20px;
-              font-size: 11px;
-              color: #999;
-              border-top: 1px solid #eee;
-              padding-top: 10px;
-            }
-            @media print {
-              body { padding: 0; }
-              .no-print { display: none; }
-              .container { border: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <div class="clinic-name">NEUROPSICOCENTRO</div>
-              <div class="system-name">SISTEMA DE GESTÃO DE LIMPEZA</div>
-            </div>
-            
-            <div class="room-name">${room.name}</div>
-            
-            <div class="room-info">
-              <div class="room-info-item">${room.type}</div>
-              <div class="room-info-item">${room.location}</div>
-              <div class="room-info-item">${room.status}</div>
-            </div>
-            
-            <div class="qr-container">
-              <div id="qrcode"></div>
-            </div>
-            
-            <div class="qr-code-text">
-              ${qrCode}
-            </div>
-            
-            <div class="qr-url">
-              <strong>URL:</strong> ${qrURL}
-            </div>
-            
-            <div class="instructions">
-              <strong>INSTRUÇÕES:</strong><br>
-              1. Cole este QR Code na porta da sala<br>
-              2. Funcionários escaneiam com o celular<br>
-              3. A aplicação abre automaticamente<br>
-              4. Inicie a limpeza diretamente pelo sistema
-            </div>
-            
-            <div class="footer">
-              Gerado em: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}<br>
-              ID: ${room.id} | Sistema v1.0
-            </div>
-            
-            <div class="no-print" style="margin-top: 30px;">
-              <button onclick="window.print()" style="
-                padding: 12px 24px;
-                background: #1976d2;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 16px;
-                cursor: pointer;
-                margin: 10px;
-              ">
-                🖨️ Imprimir QR Code
-              </button>
-              <button onclick="window.close()" style="
-                padding: 12px 24px;
-                background: #757575;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                font-size: 16px;
-                cursor: pointer;
-                margin: 10px;
-              ">
-                ❌ Fechar
-              </button>
-            </div>
-          </div>
-          
-          <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-          <script>
-            // Gerar QR Code com URL
-            const qrURL = "${qrURL}";
-            
-            QRCode.toCanvas(document.getElementById('qrcode'), qrURL, {
-              width: 250,
-              height: 250,
-              margin: 1,
-              color: {
-                dark: '#1976d2',
-                light: '#ffffff'
-              }
-            }, function(error) {
-              if (error) {
-                document.getElementById('qrcode').innerHTML = 
-                  '<div style="color:red; padding:20px;">Erro ao gerar QR Code</div>';
-              }
-            });
-            
-            // Auto-print opcional
-            setTimeout(() => {
-              if (window.location.search.includes('autoprint')) {
-                window.print();
-              }
-            }, 1000);
-          </script>
-        </body>
-        </html>
-      `;
-
-      res.setHeader('Content-Type', 'text/html');
-      res.send(html);
-
-    } catch (error) {
-      console.error('🔥 Erro ao gerar QR Code para impressão:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Erro ao gerar QR Code para impressão',
         error: error.message
       });
     }
