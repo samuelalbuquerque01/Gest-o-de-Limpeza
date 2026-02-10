@@ -12,7 +12,8 @@ import {
   Avatar,
   Chip,
   Divider,
-  Container
+  Container,
+  Grid // Adicionado esta importação
 } from "@mui/material";
 import { 
   QrCodeScanner, 
