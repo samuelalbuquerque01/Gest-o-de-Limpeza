@@ -1,4 +1,4 @@
-// src/controllers/qrController.js - CÓDIGO 100% CORRIGIDO
+// src/controllers/qrController.js - VERSÃO COMPLETA CORRIGIDA
 const QRCode = require('qrcode');
 const prisma = require('../utils/database');
 const crypto = require('crypto');
@@ -48,10 +48,7 @@ class QRController {
       }
 
       // ✅✅✅ CORREÇÃO PRINCIPAL: URL QUE VAI DENTRO DO QR CODE
-      // O QR Code deve conter UMA URL, não JSON!
       const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
-      
-      // ✅ CONTEÚDO DO QR CODE: APENAS A URL (isso faz o celular abrir)
       const qrContent = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(qrCode)}`;
       
       console.log(`🔗 Conteúdo do QR Code (URL): ${qrContent}`);
@@ -88,8 +85,8 @@ class QRController {
           room,
           qrCode: qrCode,
           qrImage: qrImage,
-          qrContent: qrContent, // ✅ URL que está dentro do QR
-          qrURL: qrContent, // ✅ Mesma URL
+          qrContent: qrContent,
+          qrURL: qrContent,
           instructions: 'Escaneie no celular para abrir a aplicação automaticamente'
         }
       });
@@ -165,7 +162,6 @@ class QRController {
         qrCode = this.generateUniqueQRCode(room);
       }
 
-      // ✅ URL QUE VAI DENTRO DO QR CODE
       const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const qrContent = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(qrCode)}`;
 
@@ -257,7 +253,6 @@ class QRController {
           });
         }
 
-        // ✅ URL PARA ABRIR NO CELULAR
         const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
         const qrURL = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(qrCode)}`;
 
@@ -269,7 +264,7 @@ class QRController {
           location: room.location,
           status: room.status,
           qrCode: room.qrCode,
-          url: qrURL, // ✅ URL para abrir no celular
+          url: qrURL,
           valid: true,
           message: 'QR Code válido para sala'
         };
@@ -326,7 +321,6 @@ class QRController {
         });
       }
 
-      // ✅ QR Code com URL para check-in do funcionário
       const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const qrContent = `${frontendURL}/worker/checkin?userId=${user.id}&name=${encodeURIComponent(user.name)}`;
       
@@ -354,6 +348,75 @@ class QRController {
       return res.status(500).json({
         success: false,
         message: 'Erro ao gerar QR Code de funcionário',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * ✅ DOWNLOAD QR CODE DE FUNCIONÁRIO
+   */
+  static async downloadUserQRCode(req, res) {
+    try {
+      const { userId } = req.params;
+      const { format = 'png', size = 300 } = req.query;
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true
+        }
+      });
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'Funcionário não encontrado'
+        });
+      }
+
+      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
+      const qrContent = `${frontendURL}/worker/checkin?userId=${user.id}&name=${encodeURIComponent(user.name)}`;
+
+      const fileName = `QR-${user.name.replace(/\s+/g, '-')}-${user.id}`;
+
+      if (format === 'svg') {
+        const svg = await QRCode.toString(qrContent, {
+          type: 'svg',
+          margin: 2,
+          width: parseInt(size),
+          color: {
+            dark: '#4caf50',
+            light: '#ffffff'
+          }
+        });
+
+        res.setHeader('Content-Type', 'image/svg+xml');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}.svg"`);
+        return res.send(svg);
+      } else {
+        const pngBuffer = await QRCode.toBuffer(qrContent, {
+          errorCorrectionLevel: 'H',
+          margin: 2,
+          width: parseInt(size),
+          color: {
+            dark: '#4caf50',
+            light: '#ffffff'
+          }
+        });
+
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}.png"`);
+        return res.send(pngBuffer);
+      }
+    } catch (error) {
+      console.error('🔥 Erro ao baixar QR Code de funcionário:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao baixar QR Code de funcionário',
         error: error.message
       });
     }
@@ -401,7 +464,6 @@ class QRController {
             generated = true;
           }
 
-          // ✅ URL para o QR Code
           const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
           const qrContent = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(qrCode)}`;
 
@@ -476,7 +538,6 @@ class QRController {
             data: { qrCode }
           });
 
-          // ✅ URL para o QR Code
           const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
           const qrContent = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(qrCode)}`;
 
@@ -517,6 +578,189 @@ class QRController {
       });
     }
   }
+
+  /**
+   * ✅ RELATÓRIO DE QR CODES
+   */
+  static async generateQRReport(req, res) {
+    try {
+      console.log('📊 Gerando relatório de QR Codes');
+
+      const rooms = await prisma.room.findMany({
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          location: true,
+          qrCode: true,
+          status: true,
+          lastCleaned: true
+        },
+        orderBy: {
+          name: 'asc'
+        }
+      });
+
+      const report = {
+        totalRooms: rooms.length,
+        roomsWithQR: rooms.filter(r => r.qrCode && r.qrCode.trim() !== '').length,
+        roomsWithoutQR: rooms.filter(r => !r.qrCode || r.qrCode.trim() === '').length,
+        byType: {},
+        byStatus: {},
+        details: rooms.map(room => ({
+          id: room.id,
+          name: room.name,
+          type: room.type,
+          location: room.location,
+          hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
+          qrCode: room.qrCode,
+          status: room.status,
+          lastCleaned: room.lastCleaned,
+          needsQR: !room.qrCode || room.qrCode.trim() === '',
+          frontendURL: room.qrCode 
+            ? `${process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com'}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}`
+            : null
+        }))
+      };
+
+      // Estatísticas por tipo
+      rooms.forEach(room => {
+        report.byType[room.type] = (report.byType[room.type] || 0) + 1;
+        report.byStatus[room.status] = (report.byStatus[room.status] || 0) + 1;
+      });
+
+      return res.json({
+        success: true,
+        message: 'Relatório de QR Codes gerado com sucesso',
+        report,
+        generatedAt: new Date().toISOString(),
+        summary: {
+          total: report.totalRooms,
+          withQR: report.roomsWithQR,
+          withoutQR: report.roomsWithoutQR,
+          percentageWithQR: Math.round((report.roomsWithQR / report.totalRooms) * 100),
+          urgent: report.details.filter(r => r.needsQR && r.status === 'NEEDS_ATTENTION').length
+        }
+      });
+    } catch (error) {
+      console.error('🔥 Erro ao gerar relatório de QR Codes:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao gerar relatório de QR Codes',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * ✅ OBTER SALA POR QR CODE (FUNÇÃO FALTANTE QUE CAUSA O ERRO)
+   * GET /api/rooms/qr/:qrCode
+   */
+  static async getRoomByQRCode(req, res) {
+    try {
+      const { qrCode } = req.params;
+      const decodedQR = decodeURIComponent(qrCode);
+      
+      console.log(`🔍 Buscando sala pelo QR Code: ${decodedQR.substring(0, 30)}...`);
+
+      const room = await prisma.room.findFirst({
+        where: { 
+          qrCode: decodedQR
+        },
+        include: {
+          cleaningHistory: {
+            take: 1,
+            orderBy: { startedAt: 'desc' },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (!room) {
+        return res.status(404).json({
+          success: false,
+          message: 'Sala não encontrada para este QR Code'
+        });
+      }
+
+      // Verificar se está sendo limpa agora
+      const currentCleaning = await prisma.cleaningHistory.findFirst({
+        where: {
+          roomId: room.id,
+          status: 'IN_PROGRESS'
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          }
+        }
+      });
+
+      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
+      const scanURL = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}`;
+
+      return res.json({
+        success: true,
+        data: {
+          room: {
+            id: room.id,
+            name: room.name,
+            type: room.type,
+            location: room.location,
+            status: room.status,
+            priority: room.priority,
+            qrCode: room.qrCode,
+            lastCleaned: room.lastCleaned,
+            createdAt: room.createdAt,
+            updatedAt: room.updatedAt
+          },
+          isBeingCleaned: !!currentCleaning,
+          currentCleaner: currentCleaning ? {
+            id: currentCleaning.user.id,
+            name: currentCleaning.user.name,
+            email: currentCleaning.user.email,
+            startedAt: currentCleaning.startedAt
+          } : null,
+          lastCleaning: room.cleaningHistory[0] ? {
+            id: room.cleaningHistory[0].id,
+            status: room.cleaningHistory[0].status,
+            completedAt: room.cleaningHistory[0].completedAt,
+            cleaner: room.cleaningHistory[0].user
+          } : null,
+          scanInfo: {
+            canStartCleaning: !currentCleaning && room.status !== 'COMPLETED',
+            scanURL: scanURL,
+            timestamp: new Date().toISOString(),
+            validation: {
+              valid: true,
+              type: 'ROOM_QR',
+              message: 'QR Code válido para sala'
+            }
+          }
+        }
+      });
+    } catch (error) {
+      console.error('🔥 Erro ao buscar sala por QR Code:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao buscar sala por QR Code',
+        error: error.message
+      });
+    }
+  }
 }
 
+// ✅ EXPORTE CORRETO COM TODAS AS FUNÇÕES
 module.exports = QRController;
