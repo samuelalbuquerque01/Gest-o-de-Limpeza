@@ -1,4 +1,4 @@
-// Front/src/components/common/QRScanner.jsx - VERSÃO REACT PURA
+// Front/src/components/common/QRScanner.jsx - VERSÃO COM LEITURA DE QR CODE
 import React, { useEffect, useRef, useState } from "react";
 import {
   Dialog,
@@ -20,20 +20,26 @@ import {
   Refresh,
   FlipCameraAndroid,
 } from "@mui/icons-material";
+import { BrowserQRCodeReader } from '@zxing/library';
 
 const QRScanner = ({ open, onClose, onScan }) => {
   const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [stream, setStream] = useState(null);
-  const [facingMode, setFacingMode] = useState("environment"); // "environment" ou "user"
+  const [facingMode, setFacingMode] = useState("environment");
   const [showVideo, setShowVideo] = useState(false);
+  const [scanningActive, setScanningActive] = useState(true);
+  const codeReaderRef = useRef(null);
+  const animationFrameRef = useRef(null);
 
   // Iniciar câmera
   const startCamera = async () => {
     try {
       setLoading(true);
       setError("");
+      setScanningActive(true);
       
       // Parar stream anterior
       if (stream) {
@@ -41,7 +47,13 @@ const QRScanner = ({ open, onClose, onScan }) => {
         setStream(null);
       }
       
-      console.log("🎬 Iniciando câmera...");
+      // Parar animação anterior
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      
+      console.log("🎬 Iniciando câmera para leitura de QR Code...");
       
       // Solicitar acesso à câmera
       const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -69,7 +81,6 @@ const QRScanner = ({ open, onClose, onScan }) => {
       } else if (err.name === 'NotFoundError') {
         errorMsg = "Nenhuma câmera encontrada.";
       } else if (err.name === 'OverconstrainedError') {
-        // Tentar a câmera frontal se a traseira falhar
         if (facingMode === 'environment') {
           console.log("🔄 Tentando câmera frontal...");
           setFacingMode('user');
@@ -83,11 +94,85 @@ const QRScanner = ({ open, onClose, onScan }) => {
     }
   };
 
-  // Trocar entre câmeras frontal/traseira
-  const toggleCamera = () => {
-    const newMode = facingMode === 'environment' ? 'user' : 'environment';
-    setFacingMode(newMode);
-    startCamera();
+  // Inicializar leitor de QR Code
+  const initQRCodeReader = () => {
+    if (!codeReaderRef.current) {
+      codeReaderRef.current = new BrowserQRCodeReader();
+      console.log("📖 Leitor de QR Code inicializado");
+    }
+  };
+
+  // Função para capturar e analisar o vídeo
+  const captureAndDecode = () => {
+    if (!videoRef.current || !canvasRef.current || !scanningActive) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+
+    // Configurar canvas com mesmo tamanho do vídeo
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+
+    // Desenhar frame do vídeo no canvas
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Tentar decodificar QR Code usando jsQR (alternativa mais leve)
+    try {
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      
+      // Usar jsQR para decodificar
+      import('jsqr').then(({ default: jsQR }) => {
+        const code = jsQR(
+          imageData.data,
+          imageData.width,
+          imageData.height,
+          {
+            inversionAttempts: "dontInvert",
+          }
+        );
+
+        if (code) {
+          console.log("✅ QR Code detectado:", code.data);
+          
+          // Parar animação
+          if (animationFrameRef.current) {
+            cancelAnimationFrame(animationFrameRef.current);
+          }
+          
+          // Parar câmera
+          if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+          }
+          
+          setScanningActive(false);
+          
+          // Chamar callback com resultado
+          if (onScan) {
+            onScan(code.data);
+          }
+          
+          // Fechar scanner
+          if (onClose) {
+            onClose();
+          }
+        } else if (scanningActive) {
+          // Continuar scanning
+          animationFrameRef.current = requestAnimationFrame(captureAndDecode);
+        }
+      }).catch(err => {
+        console.error("Erro ao carregar jsQR:", err);
+        // Continuar mesmo com erro
+        if (scanningActive) {
+          animationFrameRef.current = requestAnimationFrame(captureAndDecode);
+        }
+      });
+    } catch (err) {
+      console.warn("Erro na decodificação:", err);
+      if (scanningActive) {
+        animationFrameRef.current = requestAnimationFrame(captureAndDecode);
+      }
+    }
   };
 
   // Configurar o elemento de vídeo quando stream mudar
@@ -97,6 +182,17 @@ const QRScanner = ({ open, onClose, onScan }) => {
       videoRef.current.play().catch(e => {
         console.warn("⚠️ Erro ao reproduzir vídeo:", e);
       });
+      
+      // Iniciar leitura quando o vídeo estiver pronto
+      videoRef.current.onplaying = () => {
+        console.log("🎥 Vídeo rodando, iniciando leitura de QR Code...");
+        initQRCodeReader();
+        
+        // Iniciar loop de captura
+        if (scanningActive) {
+          animationFrameRef.current = requestAnimationFrame(captureAndDecode);
+        }
+      };
     }
   }, [stream, showVideo]);
 
@@ -115,12 +211,26 @@ const QRScanner = ({ open, onClose, onScan }) => {
         console.log("🧹 Limpando recursos...");
         stream.getTracks().forEach(track => track.stop());
       }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     };
   }, [stream]);
 
+  // Efeito para re-iniciar scanning quando scanningActive mudar
+  useEffect(() => {
+    if (scanningActive && videoRef.current && videoRef.current.readyState >= 2) {
+      animationFrameRef.current = requestAnimationFrame(captureAndDecode);
+    }
+  }, [scanningActive]);
+
   const handleClose = () => {
+    setScanningActive(false);
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
+    }
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
     }
     setShowVideo(false);
     if (onClose) onClose();
@@ -128,6 +238,14 @@ const QRScanner = ({ open, onClose, onScan }) => {
 
   const handleRetry = () => {
     setError("");
+    setScanningActive(true);
+    startCamera();
+  };
+
+  const toggleCamera = () => {
+    const newMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(newMode);
+    setScanningActive(true);
     startCamera();
   };
 
@@ -135,28 +253,9 @@ const QRScanner = ({ open, onClose, onScan }) => {
   const handleManualInput = () => {
     const qrCode = prompt("Digite ou cole o código do QR Code:");
     if (qrCode && qrCode.trim() && onScan) {
+      setScanningActive(false);
       onScan(qrCode.trim());
     }
-  };
-
-  // Capturar imagem para leitura manual
-  const captureImage = () => {
-    if (!videoRef.current) return;
-    
-    const canvas = document.createElement('canvas');
-    const video = videoRef.current;
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    // Aqui você poderia enviar a imagem para análise de QR Code
-    // Por enquanto, apenas mostra um alerta
-    alert('Imagem capturada! Em uma versão futura, isso poderia ser enviado para análise de QR Code.');
-    
-    // Para debug: salvar a imagem
-    // const imageData = canvas.toDataURL('image/jpeg');
-    // console.log('📸 Imagem capturada');
   };
 
   return (
@@ -186,6 +285,25 @@ const QRScanner = ({ open, onClose, onScan }) => {
           <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.1rem' }}>
             Scanner QR Code
           </Typography>
+          {scanningActive && (
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              ml: 2,
+              gap: 0.5 
+            }}>
+              <Box sx={{ 
+                width: 8, 
+                height: 8, 
+                borderRadius: '50%', 
+                bgcolor: '#4caf50',
+                animation: 'pulse 1.5s infinite'
+              }} />
+              <Typography variant="caption" sx={{ fontSize: '0.75rem' }}>
+                Escaneando...
+              </Typography>
+            </Box>
+          )}
         </Box>
         <IconButton onClick={handleClose} sx={{ color: 'white', p: 0.5 }}>
           <Close />
@@ -233,7 +351,7 @@ const QRScanner = ({ open, onClose, onScan }) => {
             </Box>
           ) : showVideo && stream ? (
             <>
-              {/* Elemento de vídeo do React */}
+              {/* Elemento de vídeo */}
               <video
                 ref={videoRef}
                 autoPlay
@@ -244,6 +362,17 @@ const QRScanner = ({ open, onClose, onScan }) => {
                   height: '100%',
                   objectFit: 'cover',
                   transform: facingMode === 'user' ? 'scaleX(-1)' : 'none',
+                }}
+              />
+              
+              {/* Canvas escondido para processamento */}
+              <canvas
+                ref={canvasRef}
+                style={{
+                  display: 'none',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
                 }}
               />
               
@@ -292,6 +421,21 @@ const QRScanner = ({ open, onClose, onScan }) => {
                       }}
                     />
                   ))}
+                  
+                  {/* Animação de scanning */}
+                  {scanningActive && (
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: 2,
+                        background: 'linear-gradient(90deg, transparent, #4caf50, transparent)',
+                        animation: 'scan 2s linear infinite',
+                      }}
+                    />
+                  )}
                 </Paper>
               </Box>
               
@@ -309,7 +453,9 @@ const QRScanner = ({ open, onClose, onScan }) => {
                 }}
               >
                 <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>
-                  📱 Posicione o QR Code dentro do quadro
+                  {scanningActive 
+                    ? '📱 Posicione o QR Code dentro do quadro' 
+                    : '✅ QR Code detectado!'}
                 </Typography>
               </Box>
             </>
@@ -343,7 +489,6 @@ const QRScanner = ({ open, onClose, onScan }) => {
         flexDirection: 'column',
         gap: 2,
       }}>
-        {/* Botões principais */}
         <Box sx={{ 
           display: 'flex', 
           justifyContent: 'center',
@@ -351,7 +496,6 @@ const QRScanner = ({ open, onClose, onScan }) => {
           width: '100%',
           flexWrap: 'wrap',
         }}>
-          {/* Botão para trocar câmera */}
           <Button
             variant="contained"
             startIcon={<FlipCameraAndroid />}
@@ -367,46 +511,33 @@ const QRScanner = ({ open, onClose, onScan }) => {
             {facingMode === 'environment' ? 'Câmera Frontal' : 'Câmera Traseira'}
           </Button>
           
-          {/* Botão para capturar imagem */}
           <Button
             variant="outlined"
-            startIcon={<CameraAlt />}
-            onClick={captureImage}
+            startIcon={<Refresh />}
+            onClick={handleRetry}
             sx={{
               minWidth: 180,
               py: 1.5,
             }}
-            disabled={loading || !showVideo}
+            disabled={loading}
           >
-            Capturar Imagem
+            Reiniciar Scanner
           </Button>
         </Box>
 
-        {/* Botões de ação */}
         <Box sx={{ 
           display: 'flex', 
           justifyContent: 'space-between',
           width: '100%',
           gap: 1,
         }}>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              onClick={handleManualInput}
-              variant="outlined"
-              size="small"
-            >
-              Digitar Código
-            </Button>
-            
-            <Button
-              onClick={handleRetry}
-              startIcon={<Refresh />}
-              variant="outlined"
-              size="small"
-            >
-              Reiniciar
-            </Button>
-          </Box>
+          <Button
+            onClick={handleManualInput}
+            variant="outlined"
+            size="small"
+          >
+            Digitar Código Manualmente
+          </Button>
           
           <Button
             onClick={handleClose}
@@ -418,6 +549,18 @@ const QRScanner = ({ open, onClose, onScan }) => {
           </Button>
         </Box>
       </DialogActions>
+
+      {/* CSS para animações */}
+      <style>{`
+        @keyframes scan {
+          0% { transform: translateY(0); }
+          100% { transform: translateY(250px); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
     </Dialog>
   );
 };
