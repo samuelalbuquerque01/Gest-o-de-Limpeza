@@ -1,4 +1,4 @@
-// src/controllers/roomController.js - CÓDIGO COMPLETO CORRIGIDO
+// src/controllers/roomController.js - VERSÃO CORRIGIDA
 const { PrismaClient } = require("@prisma/client");
 const crypto = require("crypto");
 const QRCode = require('qrcode');
@@ -17,12 +17,10 @@ function slugify(str = "") {
 async function generateUniqueQrCode({ type, name, location }) {
   const base = `QR-${slugify(type)}-${slugify(name)}-${slugify(location)}`.slice(0, 40);
   
-  // Tenta até 10 vezes gerar um QR Code único
   for (let i = 0; i < 10; i++) {
-    const rnd = crypto.randomBytes(3).toString("hex").toUpperCase(); // 6 chars
+    const rnd = crypto.randomBytes(3).toString("hex").toUpperCase();
     const code = `${base}-${rnd}`;
     
-    // Verifica se já existe no banco
     const exists = await prisma.room.findUnique({ 
       where: { qrCode: code } 
     });
@@ -30,28 +28,23 @@ async function generateUniqueQrCode({ type, name, location }) {
     if (!exists) return code;
   }
   
-  // Se não conseguir em 10 tentativas, gera com timestamp
   const timestamp = Date.now().toString(36).toUpperCase();
   return `${base}-${timestamp}`.slice(0, 50);
 }
 
 /**
- * ✅ GERAR IMAGEM DO QR CODE (FUNÇÃO AUXILIAR NOVA)
+ * ✅ GERAR IMAGEM DO QR CODE COM URL DE REDIRECIONAMENTO
  */
-async function generateQRImage(qrCode, roomData) {
+async function generateQRImage(qrCode, roomData, req) {
   try {
-    const qrData = {
-      type: 'ROOM',
-      roomId: roomData.id,
-      roomName: roomData.name,
-      roomType: roomData.type,
-      location: roomData.location,
-      qrCode: qrCode,
-      timestamp: Date.now(),
-      system: 'Neuropsicocentro Cleaning System'
-    };
+    // ✅ CORREÇÃO: URL que será aberta no celular
+    const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const qrURL = `${baseURL}/qr/redirect?code=${encodeURIComponent(qrCode)}&roomId=${roomData.id}`;
+    
+    // Conteúdo do QR Code: APENAS a URL (para abrir automaticamente no celular)
+    const qrContent = qrURL;
 
-    const qrImage = await QRCode.toDataURL(JSON.stringify(qrData), {
+    const qrImage = await QRCode.toDataURL(qrContent, {
       errorCorrectionLevel: 'H',
       margin: 2,
       width: 300,
@@ -61,7 +54,7 @@ async function generateQRImage(qrCode, roomData) {
       }
     });
 
-    return qrImage;
+    return { qrImage, qrURL };
   } catch (error) {
     console.error('🔥 Erro ao gerar imagem do QR:', error);
     return null;
@@ -159,7 +152,7 @@ const roomController = {
     }
   },
 
-  // ✅ GERAR NOVO QR CODE PARA UMA SALA
+  // ✅ GERAR NOVO QR CODE PARA UMA SALA (COM URL)
   // POST /api/rooms/:id/generate-qr
   generateNewQRCode: async (req, res) => {
     try {
@@ -195,8 +188,11 @@ const roomController = {
       });
 
       let qrImage = null;
+      let qrURL = null;
       if (generateImage) {
-        qrImage = await generateQRImage(newQRCode, updatedRoom);
+        const qrData = await generateQRImage(newQRCode, updatedRoom, req);
+        qrImage = qrData?.qrImage || null;
+        qrURL = qrData?.qrURL || null;
       }
 
       return res.json({
@@ -204,8 +200,10 @@ const roomController = {
         message: 'Novo QR Code gerado com sucesso',
         qrCode: updatedRoom.qrCode,
         qrImage: qrImage,
+        qrURL: qrURL, // ✅ URL para o celular
         room: updatedRoom,
         scanUrl: `/api/rooms/qr/${encodeURIComponent(newQRCode)}`,
+        redirectUrl: `/qr/redirect?code=${encodeURIComponent(newQRCode)}&roomId=${id}`,
         downloadUrl: `/api/qr/download/${id}`,
         generatedAt: new Date().toISOString()
       });
@@ -229,7 +227,6 @@ const roomController = {
       if (type && type !== "ALL") where.type = type;
       if (priority && priority !== "ALL") where.priority = priority;
       
-      // Filtrar por salas com/sem QR Code
       if (hasQR === "true") {
         where.qrCode = { not: null };
       } else if (hasQR === "false") {
@@ -254,12 +251,14 @@ const roomController = {
         orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
       });
 
-      // Adicionar informações sobre QR Code
+      // ✅ ADICIONAR URL DO QR CODE
+      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
       const roomsWithQRInfo = rooms.map(room => ({
         ...room,
         hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
         qrStatus: room.qrCode && room.qrCode.trim() !== '' ? 'ACTIVE' : 'MISSING',
-        scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null
+        scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
+        qrURL: room.qrCode ? `${baseURL}/qr/redirect?code=${encodeURIComponent(room.qrCode)}&roomId=${room.id}` : null
       }));
 
       return res.json({ 
@@ -281,58 +280,7 @@ const roomController = {
     }
   },
 
-  // ✅ PUBLIC (worker e admin): pegar ambiente por id
-  async getRoomById(req, res) {
-    try {
-      const { id } = req.params;
-      const room = await prisma.room.findUnique({ 
-        where: { id },
-        include: {
-          cleaningRecords: {
-            take: 5,
-            orderBy: { createdAt: 'desc' },
-            include: {
-              cleaner: {
-                select: { id: true, name: true }
-              }
-            }
-          }
-        }
-      });
-      
-      if (!room) return res.status(404).json({ 
-        success: false, 
-        message: "Ambiente não encontrado" 
-      });
-      
-      // Adicionar informações de QR Code
-      const roomWithQRInfo = {
-        ...room,
-        hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
-        qrStatus: room.qrCode && room.qrCode.trim() !== '' ? 'ACTIVE' : 'MISSING',
-        scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
-        qrInfo: {
-          generated: !!room.qrCode,
-          code: room.qrCode,
-          canGenerate: !room.qrCode
-        }
-      };
-      
-      return res.json({ 
-        success: true, 
-        room: roomWithQRInfo 
-      });
-    } catch (error) {
-      console.error("🔥 getRoomById error:", error);
-      return res.status(500).json({ 
-        success: false, 
-        message: "Erro ao buscar ambiente",
-        error: error.message 
-      });
-    }
-  },
-
-  // ✅ ADMIN: criar ambiente COM QR CODE AUTOMÁTICO E IMAGEM
+  // ✅ ADMIN: criar ambiente COM QR CODE E URL DE REDIRECIONAMENTO
   async createRoom(req, res) {
     try {
       const body = req.body || {};
@@ -370,31 +318,28 @@ const roomController = {
 
       const room = await prisma.room.create({ data });
 
-      // ✅ GERA IMAGEM DO QR CODE AUTOMATICAMENTE
-      const qrImage = await generateQRImage(qrCode, {
-        id: room.id,
-        name: room.name,
-        type: room.type,
-        location: room.location
-      });
+      // ✅ GERA IMAGEM DO QR CODE COM URL DE REDIRECIONAMENTO
+      const qrData = await generateQRImage(qrCode, room, req);
+      const qrURL = qrData?.qrURL || `${req.protocol}://${req.get('host')}/qr/redirect?code=${encodeURIComponent(qrCode)}&roomId=${room.id}`;
 
       console.log(`✅ Sala criada com sucesso: ${room.name} (ID: ${room.id})`);
-      console.log(`✅ QR Code IMAGEM gerada: ${qrImage ? 'Sim' : 'Não'}`);
+      console.log(`✅ QR Code URL: ${qrURL}`);
 
       return res.status(201).json({
         success: true,
         message: "Ambiente criado com sucesso",
         room,
         qrCode: room.qrCode,
-        qrImage: qrImage, // ✅ AGORA RETORNA A IMAGEM DO QR CODE
+        qrImage: qrData?.qrImage || null,
+        qrURL: qrURL, // ✅ URL para redirecionamento
         scanUrl: `/api/rooms/qr/${encodeURIComponent(room.qrCode)}`,
         downloadUrl: `/api/qr/download/${room.id}`,
+        redirectUrl: qrURL,
         generatedAt: new Date().toISOString()
       });
     } catch (error) {
       console.error("🔥 createRoom error:", error);
 
-      // Erro de QR Code duplicado
       if (String(error?.code) === "P2002") {
         return res.status(409).json({
           success: false,
@@ -454,13 +399,18 @@ const roomController = {
 
       console.log(`✅ Sala atualizada: ${room.name}`);
 
+      // ✅ GERAR NOVA URL DE REDIRECIONAMENTO
+      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      const qrURL = room.qrCode ? `${baseURL}/qr/redirect?code=${encodeURIComponent(room.qrCode)}&roomId=${room.id}` : null;
+
       return res.json({ 
         success: true, 
         message: "Ambiente atualizado", 
         room,
         qrInfo: {
           hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
-          scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null
+          scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
+          qrURL: qrURL // ✅ URL para redirecionamento
         }
       });
     } catch (error) {
@@ -546,11 +496,13 @@ const roomController = {
         orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
       });
 
-      // Adicionar informações de QR Code
+      // ✅ ADICIONAR URL DE REDIRECIONAMENTO DO QR CODE
+      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
       const roomsWithQR = rooms.map(room => ({
         ...room,
         hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
-        scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null
+        scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
+        qrURL: room.qrCode ? `${baseURL}/qr/redirect?code=${encodeURIComponent(room.qrCode)}&roomId=${room.id}` : null
       }));
 
       console.log(`📊 ${rooms.length} salas disponíveis para limpeza`);
@@ -581,7 +533,6 @@ const roomController = {
         prisma.room.count({ where: { status: "NEEDS_ATTENTION" } }),
       ]);
 
-      // ✅ CORREÇÃO: Conta salas COM QR Code (não nulo e não vazio)
       const withQR = await prisma.room.count({ 
         where: { 
           AND: [
@@ -591,7 +542,6 @@ const roomController = {
         } 
       });
 
-      // ✅ CORREÇÃO: Conta salas SEM QR Code (nulo ou vazio)
       const withoutQR = await prisma.room.count({ 
         where: { 
           OR: [
@@ -625,7 +575,7 @@ const roomController = {
     }
   },
 
-  // ✅ GERAR QR CODES PARA TODAS AS SALAS (ADMIN)
+  // ✅ GERAR QR CODES PARA TODAS AS SALAS (COM URL DE REDIRECIONAMENTO)
   // POST /api/rooms/generate-all-qr
   async generateAllQRCodes(req, res) {
     try {
@@ -647,13 +597,17 @@ const roomController = {
         failed: []
       };
 
+      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+
       for (const room of rooms) {
         try {
           if (room.qrCode && room.qrCode.trim() !== '') {
+            const existingURL = `${baseURL}/qr/redirect?code=${encodeURIComponent(room.qrCode)}&roomId=${room.id}`;
             results.alreadyHave.push({
               id: room.id,
               name: room.name,
-              qrCode: room.qrCode
+              qrCode: room.qrCode,
+              qrURL: existingURL
             });
             continue;
           }
@@ -664,6 +618,8 @@ const roomController = {
             location: room.location
           });
 
+          const qrURL = `${baseURL}/qr/redirect?code=${encodeURIComponent(newQRCode)}&roomId=${room.id}`;
+
           await prisma.room.update({
             where: { id: room.id },
             data: { qrCode: newQRCode }
@@ -672,10 +628,12 @@ const roomController = {
           results.generated.push({
             id: room.id,
             name: room.name,
-            qrCode: newQRCode
+            qrCode: newQRCode,
+            qrURL: qrURL
           });
 
           console.log(`✅ QR Code gerado para ${room.name}: ${newQRCode}`);
+          console.log(`🔗 URL: ${qrURL}`);
         } catch (roomError) {
           console.error(`🔥 Erro ao gerar QR para ${room.name}:`, roomError);
           results.failed.push({
@@ -734,6 +692,10 @@ const roomController = {
 
       const hasQR = !!(room.qrCode && room.qrCode.trim() !== '');
       
+      // ✅ URL DE REDIRECIONAMENTO
+      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      const qrURL = hasQR ? `${baseURL}/qr/redirect?code=${encodeURIComponent(room.qrCode)}&roomId=${room.id}` : null;
+
       let qrData = null;
       if (hasQR) {
         qrData = {
@@ -743,6 +705,7 @@ const roomController = {
           roomType: room.type,
           location: room.location,
           qrCode: room.qrCode,
+          qrURL: qrURL,
           scanUrl: `/api/rooms/qr/${encodeURIComponent(room.qrCode)}`,
           downloadUrl: `/api/qr/download/${room.id}`
         };
@@ -761,7 +724,8 @@ const roomController = {
             hasQRCode: hasQR,
             code: room.qrCode,
             status: hasQR ? 'ACTIVE' : 'MISSING',
-            needsGeneration: !hasQR
+            needsGeneration: !hasQR,
+            qrURL: qrURL
           },
           qrData,
           actions: {
