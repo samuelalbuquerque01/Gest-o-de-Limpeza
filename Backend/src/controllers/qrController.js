@@ -1,4 +1,4 @@
-// src/controllers/qrController.js - VERSÃO CORRIGIDA
+// src/controllers/qrController.js - VERSÃO CORRIGIDA COMPLETA
 const QRCode = require('qrcode');
 const prisma = require('../utils/database');
 const crypto = require('crypto');
@@ -322,6 +322,405 @@ class QRController {
       return res.status(500).json({
         success: false,
         message: 'Erro ao validar QR Code',
+        error: error.message
+      });
+    }
+  }
+
+  // ===========================================================================
+  // ✅ FUNÇÕES ADICIONAIS PARA COMPATIBILIDADE COM ROTAS
+  // ===========================================================================
+
+  /**
+   * ✅ GERAR QR CODE PARA FUNCIONÁRIO (PLACEHOLDER)
+   * POST /api/qr/generate-user/:userId
+   */
+  static async generateUserQRCode(req, res) {
+    try {
+      const { userId } = req.params;
+      
+      // Buscar usuário no banco
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          status: true
+        }
+      });
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'Funcionário não encontrado'
+        });
+      }
+
+      // Gerar QR Code para funcionário
+      const userData = {
+        type: 'USER',
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        timestamp: Date.now(),
+        action: 'CHECK_IN'
+      };
+
+      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      const qrContent = JSON.stringify(userData);
+      
+      const qrImage = await QRCode.toDataURL(qrContent, {
+        errorCorrectionLevel: 'H',
+        margin: 2,
+        width: 300,
+        color: {
+          dark: '#4caf50',
+          light: '#ffffff'
+        }
+      });
+
+      return res.json({
+        success: true,
+        message: 'QR Code do funcionário gerado com sucesso',
+        user,
+        qrImage,
+        qrData: userData,
+        generatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('🔥 Erro ao gerar QR Code de funcionário:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao gerar QR Code de funcionário',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * ✅ BAIXAR QR CODE DE FUNCIONÁRIO (PLACEHOLDER)
+   * GET /api/qr/download-user/:userId
+   */
+  static async downloadUserQRCode(req, res) {
+    try {
+      const { userId } = req.params;
+      
+      // Buscar usuário no banco
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true
+        }
+      });
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'Funcionário não encontrado'
+        });
+      }
+
+      // Gerar dados para QR Code
+      const userData = {
+        type: 'USER',
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        timestamp: Date.now()
+      };
+
+      const qrContent = JSON.stringify(userData);
+      const fileName = `QR-${user.name.replace(/\s+/g, '-')}-${user.id}`;
+
+      const pngBuffer = await QRCode.toBuffer(qrContent, {
+        errorCorrectionLevel: 'H',
+        margin: 2,
+        width: 300,
+        color: {
+          dark: '#4caf50',
+          light: '#ffffff'
+        }
+      });
+
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}.png"`);
+      return res.send(pngBuffer);
+    } catch (error) {
+      console.error('🔥 Erro ao baixar QR Code de funcionário:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao baixar QR Code de funcionário',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * ✅ GERAR QR CODES EM LOTE
+   * POST /api/qr/generate-batch
+   */
+  static async generateBatchQRCodes(req, res) {
+    try {
+      const { roomIds = [] } = req.body;
+
+      console.log(`🔳 Gerando QR Codes em lote para ${roomIds.length} salas`);
+
+      const results = [];
+      const errors = [];
+
+      for (const roomId of roomIds) {
+        try {
+          const room = await prisma.room.findUnique({
+            where: { id: roomId },
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              location: true,
+              qrCode: true
+            }
+          });
+
+          if (!room) {
+            errors.push({ roomId, error: 'Sala não encontrada' });
+            continue;
+          }
+
+          let qrCode = room.qrCode;
+          let generated = false;
+
+          if (!qrCode || qrCode.trim() === '') {
+            qrCode = this.generateUniqueQRCode(room);
+            await prisma.room.update({
+              where: { id: roomId },
+              data: { qrCode }
+            });
+            generated = true;
+          }
+
+          const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+          const qrURL = `${baseURL}/qr/redirect?code=${encodeURIComponent(qrCode)}&roomId=${room.id}`;
+
+          results.push({
+            roomId: room.id,
+            roomName: room.name,
+            qrCode,
+            generated,
+            qrURL,
+            success: true
+          });
+        } catch (roomError) {
+          errors.push({ roomId, error: roomError.message });
+        }
+      }
+
+      return res.json({
+        success: true,
+        message: `QR Codes gerados em lote: ${results.length} sucessos, ${errors.length} erros`,
+        results,
+        errors,
+        summary: {
+          total: roomIds.length,
+          successful: results.length,
+          failed: errors.length
+        }
+      });
+    } catch (error) {
+      console.error('🔥 Erro ao gerar QR Codes em lote:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao gerar QR Codes em lote',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * ✅ GERAR QR CODES FALTANTES
+   * POST /api/qr/generate-missing
+   */
+  static async generateMissingQRCodes(req, res) {
+    try {
+      console.log('🔳 Gerando QR Codes faltantes para todas as salas');
+
+      // Buscar salas sem QR Code
+      const roomsWithoutQR = await prisma.room.findMany({
+        where: {
+          OR: [
+            { qrCode: null },
+            { qrCode: '' }
+          ]
+        },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          location: true
+        }
+      });
+
+      console.log(`📊 ${roomsWithoutQR.length} salas sem QR Code encontradas`);
+
+      const results = [];
+      const errors = [];
+
+      for (const room of roomsWithoutQR) {
+        try {
+          const qrCode = this.generateUniqueQRCode(room);
+          
+          await prisma.room.update({
+            where: { id: room.id },
+            data: { qrCode }
+          });
+
+          const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+          const qrURL = `${baseURL}/qr/redirect?code=${encodeURIComponent(qrCode)}&roomId=${room.id}`;
+
+          results.push({
+            roomId: room.id,
+            roomName: room.name,
+            qrCode,
+            qrURL,
+            success: true
+          });
+
+          console.log(`✅ QR Code gerado para ${room.name}: ${qrCode}`);
+        } catch (roomError) {
+          errors.push({ roomId: room.id, roomName: room.name, error: roomError.message });
+          console.error(`❌ Erro ao gerar QR para ${room.name}:`, roomError.message);
+        }
+      }
+
+      return res.json({
+        success: true,
+        message: `QR Codes faltantes gerados: ${results.length} sucessos, ${errors.length} erros`,
+        results,
+        errors,
+        summary: {
+          totalWithoutQR: roomsWithoutQR.length,
+          generated: results.length,
+          failed: errors.length,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      console.error('🔥 Erro ao gerar QR Codes faltantes:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao gerar QR Codes faltantes',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * ✅ GERAR RELATÓRIO DE QR CODES
+   * GET /api/qr/report
+   */
+  static async generateQRReport(req, res) {
+    try {
+      console.log('📊 Gerando relatório de QR Codes');
+
+      // Contar salas com e sem QR Code
+      const [totalRooms, roomsWithQR, roomsWithoutQR] = await Promise.all([
+        prisma.room.count(),
+        prisma.room.count({
+          where: {
+            AND: [
+              { qrCode: { not: null } },
+              { qrCode: { not: '' } }
+            ]
+          }
+        }),
+        prisma.room.count({
+          where: {
+            OR: [
+              { qrCode: null },
+              { qrCode: '' }
+            ]
+          }
+        })
+      ]);
+
+      // Buscar algumas salas sem QR Code como exemplo
+      const exampleRoomsWithoutQR = await prisma.room.findMany({
+        where: {
+          OR: [
+            { qrCode: null },
+            { qrCode: '' }
+          ]
+        },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          location: true,
+          status: true
+        },
+        take: 10
+      });
+
+      // Buscar salas com QR Code recentemente gerados
+      const recentQRGenerated = await prisma.room.findMany({
+        where: {
+          AND: [
+            { qrCode: { not: null } },
+            { qrCode: { not: '' } },
+            { updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } // Últimos 7 dias
+          ]
+        },
+        select: {
+          id: true,
+          name: true,
+          qrCode: true,
+          updatedAt: true
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 10
+      });
+
+      const report = {
+        summary: {
+          totalRooms,
+          roomsWithQR,
+          roomsWithoutQR,
+          qrCoveragePercentage: totalRooms > 0 ? Math.round((roomsWithQR / totalRooms) * 100) : 0
+        },
+        analysis: {
+          needsAttention: roomsWithoutQR > 0,
+          recommendedAction: roomsWithoutQR > 0 ? 'Gerar QR Codes faltantes' : 'Todas as salas têm QR Code',
+          priorityLevel: roomsWithoutQR > 10 ? 'HIGH' : roomsWithoutQR > 5 ? 'MEDIUM' : 'LOW'
+        },
+        examples: {
+          withoutQR: exampleRoomsWithoutQR,
+          recentlyGenerated: recentQRGenerated.map(room => ({
+            ...room,
+            daysAgo: Math.floor((Date.now() - new Date(room.updatedAt).getTime()) / (1000 * 60 * 60 * 24))
+          }))
+        },
+        recommendations: [
+          roomsWithoutQR > 0 ? `Gerar QR Codes para ${roomsWithoutQR} salas faltantes` : null,
+          'Verificar se todos os QR Codes estão impressos e fixados',
+          'Testar funcionalidade de escaneamento periodicamente'
+        ].filter(Boolean),
+        generatedAt: new Date().toISOString()
+      };
+
+      return res.json({
+        success: true,
+        message: 'Relatório de QR Codes gerado com sucesso',
+        report
+      });
+    } catch (error) {
+      console.error('🔥 Erro ao gerar relatório de QR Codes:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao gerar relatório de QR Codes',
         error: error.message
       });
     }
