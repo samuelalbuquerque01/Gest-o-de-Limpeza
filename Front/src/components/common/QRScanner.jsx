@@ -1,5 +1,5 @@
-// src/components/common/QRScanner.jsx
-import React, { useState, useEffect } from 'react';
+// Front/src/components/common/QRScanner.jsx - VERSÃO CORRIGIDA
+import React, { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -9,507 +9,326 @@ import {
   Box,
   Typography,
   CircularProgress,
+  IconButton,
   Alert,
-  Card,
-  CardContent,
-  Chip,
-  Avatar,
-  Divider,
-  TextField,
-  Grid,
-  Stack,
-} from '@mui/material';
+  Paper,
+} from "@mui/material";
 import {
   QrCodeScanner,
+  Close,
   CameraAlt,
-  CheckCircle,
-  Room,
-  LocationOn,
-  Person,
-  AccessTime,
-  Warning,
-  ArrowBack,
-} from '@mui/icons-material';
-import roomService from '../../services/roomService';
-import cleaningService from '../../services/cleaningService';
-import { useAuth } from '../../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+  FlashOn,
+  FlashOff,
+  SwitchCamera,
+} from "@mui/icons-material";
+import { Html5QrcodeScanner } from "html5-qrcode";
 
-const QRScanner = ({
-  open,
-  onClose,
-  onScan,
-  title = "Escanear QR Code da Sala",
-  description = "Aponte a câmera para o QR Code colado na sala",
-  autoStart = false,
-}) => {
-  const navigate = useNavigate();
-  const { user } = useAuth();
-  
-  const [scanning, setScanning] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [scannedRoom, setScannedRoom] = useState(null);
-  const [manualInput, setManualInput] = useState('');
-  const [cameraError, setCameraError] = useState('');
+const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true }) => {
+  const scannerRef = useRef(null);
+  const [scanner, setScanner] = useState(null);
+  const [cameraId, setCameraId] = useState(null);
+  const [cameras, setCameras] = useState([]);
+  const [flash, setFlash] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  // Iniciar scanner automaticamente se autoStart for true
-  useEffect(() => {
-    if (open && autoStart) {
-      startScanner();
-    }
-  }, [open, autoStart]);
-
-  const startScanner = () => {
-    setScanning(true);
-    setError('');
-    setScannedRoom(null);
-    setCameraError('');
-    
-    // Em produção, aqui integraria com uma biblioteca de câmera
-    console.log('Iniciando scanner de QR Code...');
-  };
-
-  const handleQRScan = async (qrCode) => {
-    if (!qrCode) return;
-    
+  const initScanner = async () => {
     try {
       setLoading(true);
-      setError('');
-      setSuccess('');
+      setError("");
 
-      console.log('🔍 Escaneando QR Code:', qrCode);
+      // Limpa scanner anterior
+      if (scanner) {
+        await scanner.clear();
+      }
 
-      // Buscar sala pelo QR Code
-      const response = await roomService.findRoomByQRCode(qrCode);
-      
-      if (response.success) {
-        const data = response.data;
-        setScannedRoom(data);
-        setScanning(false);
-        
-        if (data.isBeingCleaned) {
-          setError(`⚠️ Esta sala já está sendo limpa por ${data.currentCleaner?.name || 'outro funcionário'}`);
-        } else {
-          setSuccess('✅ Sala encontrada! Pronta para limpeza.');
+      // Configura novo scanner
+      const html5QrcodeScanner = new Html5QrcodeScanner(
+        "qr-reader",
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          rememberLastUsedCamera: true,
+          supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+        },
+        false
+      );
+
+      // Sucesso na leitura
+      html5QrcodeScanner.render(
+        (decodedText, decodedResult) => {
+          console.log("✅ QR Code lido:", decodedText);
           
-          // Se onScan foi fornecido, chama com os dados
-          if (onScan) {
-            onScan(data);
+          // Para scanner
+          html5QrcodeScanner.clear();
+          
+          // Processa o resultado
+          let scanData;
+          try {
+            // Tenta parsear como JSON (backward compatibility)
+            scanData = JSON.parse(decodedText);
+          } catch {
+            // Se não for JSON, trata como string/URL
+            scanData = decodedText;
+          }
+          
+          // Chama callback
+          if (onScan) onScan(scanData);
+        },
+        (errorMessage) => {
+          // Ignora erros comuns de não encontrar QR
+          if (!errorMessage.includes("NotFoundException")) {
+            console.log("ℹ️ Scanner:", errorMessage);
           }
         }
-      } else {
-        setError(response.error || 'QR Code não reconhecido ou sala não encontrada');
-        setScanning(false);
-      }
+      );
+
+      setScanner(html5QrcodeScanner);
     } catch (err) {
-      console.error('Erro ao escanear QR Code:', err);
-      setError('Erro ao conectar com o servidor. Verifique sua conexão.');
-      setScanning(false);
+      console.error("🔥 Erro ao inicializar scanner:", err);
+      setError("Não foi possível acessar a câmera. Verifique as permissões.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleStartCleaning = async () => {
-    if (!scannedRoom?.room?.id || !user?.id) {
-      setError('Dados insuficientes para iniciar limpeza');
-      return;
+  useEffect(() => {
+    if (open && scanning) {
+      initScanner();
     }
 
-    try {
-      setLoading(true);
-      setError('');
-
-      // Iniciar limpeza usando o cleaningService
-      const response = await cleaningService.startCleaning(scannedRoom.room.id);
-
-      if (response?.success) {
-        setSuccess('✅ Limpeza iniciada com sucesso!');
-        
-        // Fechar modal após 2 segundos e redirecionar
-        setTimeout(() => {
-          onClose();
-          navigate('/worker'); // Redireciona para a interface do worker
-        }, 2000);
-      } else {
-        setError(response?.message || response?.error || 'Erro ao iniciar limpeza');
+    return () => {
+      if (scanner) {
+        scanner.clear().catch(console.error);
       }
-    } catch (err) {
-      setError('Erro ao iniciar limpeza. Tente novamente.');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleManualInput = () => {
-    if (manualInput.trim()) {
-      handleQRScan(manualInput.trim());
-    } else {
-      setError('Digite um QR Code válido');
-    }
-  };
+    };
+  }, [open, scanning]);
 
   const handleClose = () => {
-    setScanning(false);
-    setLoading(false);
-    setError('');
-    setSuccess('');
-    setScannedRoom(null);
-    setManualInput('');
-    onClose();
+    if (scanner) {
+      scanner.clear().catch(console.error);
+    }
+    setScanner(null);
+    if (onClose) onClose();
   };
 
-  // Simulação para desenvolvimento/teste
-  const simulateScan = () => {
-    // Para teste durante desenvolvimento
-    const testQRCodes = [
-      'QR-ROOM-SALA101-ABC123',
-      'QR-BATHROOM-BANHEIRO1-XYZ789',
-      'QR-KITCHEN-COZINHA-DEF456'
-    ];
-    const randomQR = testQRCodes[Math.floor(Math.random() * testQRCodes.length)];
-    handleQRScan(randomQR);
+  const toggleFlash = () => {
+    setFlash(!flash);
+    // Aqui você implementaria o controle do flash se a API da câmera permitir
   };
 
-  const getRoomTypeIcon = (type) => {
-    switch (type) {
-      case 'BATHROOM': return '🚽';
-      case 'KITCHEN': return '🍳';
-      case 'MEETING_ROOM': return '💼';
-      default: return '🚪';
+  const switchCamera = async () => {
+    if (scanner && cameras.length > 1) {
+      try {
+        const currentIndex = cameras.findIndex(cam => cam.id === cameraId);
+        const nextIndex = (currentIndex + 1) % cameras.length;
+        const nextCamera = cameras[nextIndex];
+        
+        await scanner.clear();
+        setCameraId(nextCamera.id);
+        await initScanner();
+      } catch (err) {
+        console.error("Erro ao trocar câmera:", err);
+      }
     }
   };
 
-  const getRoomTypeLabel = (type) => {
-    switch (type) {
-      case 'BATHROOM': return 'Banheiro';
-      case 'KITCHEN': return 'Cozinha';
-      case 'MEETING_ROOM': return 'Sala de Reunião';
-      default: return 'Sala';
-    }
-  };
-
-  const getRoomStatusColor = (status) => {
-    switch (status) {
-      case 'PENDING': return 'warning';
-      case 'IN_PROGRESS': return 'info';
-      case 'COMPLETED': return 'success';
-      case 'NEEDS_ATTENTION': return 'error';
-      default: return 'default';
-    }
-  };
-
-  const getRoomStatusLabel = (status) => {
-    switch (status) {
-      case 'PENDING': return 'Pendente';
-      case 'IN_PROGRESS': return 'Em Andamento';
-      case 'COMPLETED': return 'Concluída';
-      case 'NEEDS_ATTENTION': return 'Atenção';
-      default: return status;
+  const requestCameraPermission = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: "environment" } 
+      });
+      stream.getTracks().forEach(track => track.stop());
+      setError("");
+      await initScanner();
+    } catch (err) {
+      setError("Permissão da câmera negada. Por favor, permita o acesso à câmera nas configurações do navegador.");
     }
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
-      <DialogTitle>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <QrCodeScanner />
-            <Typography variant="h6">{title}</Typography>
-          </Box>
-          <Button startIcon={<ArrowBack />} onClick={handleClose} size="small">
-            Voltar
-          </Button>
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 3,
+          overflow: "hidden",
+        },
+      }}
+    >
+      <DialogTitle sx={{ 
+        bgcolor: "#1976d2", 
+        color: "white",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between"
+      }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <QrCodeScanner />
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Scanner de QR Code
+          </Typography>
         </Box>
+        <IconButton onClick={handleClose} sx={{ color: "white" }}>
+          <Close />
+        </IconButton>
       </DialogTitle>
-      
-      <DialogContent>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
-            {error}
-          </Alert>
-        )}
-        
-        {success && (
-          <Alert severity="success" sx={{ mb: 2 }}>
-            {success}
-          </Alert>
-        )}
 
-        {/* Conteúdo baseado no estado */}
-        {loading ? (
-          <Box sx={{ py: 6, textAlign: 'center' }}>
-            <CircularProgress size={60} sx={{ mb: 2 }} />
-            <Typography variant="h6">
-              {scannedRoom ? 'Iniciando limpeza...' : 'Processando QR Code...'}
-            </Typography>
-          </Box>
-        ) : scannedRoom ? (
-          // Tela de confirmação da sala encontrada
-          <Box sx={{ py: 2 }}>
-            <Card variant="outlined" sx={{ borderRadius: 2 }}>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                  <Avatar sx={{ 
-                    bgcolor: '#1aae96', 
-                    mr: 2, 
-                    fontSize: '1.5rem',
-                    width: 56,
-                    height: 56
-                  }}>
-                    {getRoomTypeIcon(scannedRoom.room.type)}
-                  </Avatar>
-                  <Box sx={{ flexGrow: 1 }}>
-                    <Typography variant="h5" sx={{ fontWeight: 900 }}>
-                      {scannedRoom.room.name}
-                    </Typography>
-                    <Typography variant="body2" color="textSecondary" sx={{ display: 'flex', alignItems: 'center' }}>
-                      <LocationOn fontSize="small" sx={{ mr: 0.5 }} />
-                      {scannedRoom.room.location}
-                    </Typography>
-                  </Box>
-                  <Chip 
-                    label={getRoomTypeLabel(scannedRoom.room.type)}
-                    color="primary"
-                    sx={{ fontWeight: 700 }}
-                  />
-                </Box>
-
-                <Grid container spacing={2} sx={{ mb: 3 }}>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="textSecondary">
-                      QR Code:
-                    </Typography>
-                    <Typography variant="body1" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
-                      {scannedRoom.room.qrCode}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="textSecondary">
-                      Status:
-                    </Typography>
-                    <Chip
-                      label={getRoomStatusLabel(scannedRoom.room.status)}
-                      color={getRoomStatusColor(scannedRoom.room.status)}
-                      size="small"
-                      sx={{ fontWeight: 600 }}
-                    />
-                  </Grid>
-                </Grid>
-
-                {scannedRoom.isBeingCleaned && scannedRoom.currentCleaner && (
-                  <Alert 
-                    severity="warning" 
-                    icon={<Person />}
-                    sx={{ mb: 3 }}
-                  >
-                    <Typography variant="body2">
-                      <strong>Em limpeza por:</strong> {scannedRoom.currentCleaner.name}
-                    </Typography>
-                    <Typography variant="caption">
-                      Esta sala já está sendo higienizada no momento.
-                    </Typography>
-                  </Alert>
-                )}
-
-                {!scannedRoom.isBeingCleaned && (
-                  <Alert 
-                    severity="success" 
-                    icon={<CheckCircle />}
-                    sx={{ mb: 3 }}
-                  >
-                    <Typography variant="body2">
-                      Esta sala está disponível para limpeza!
-                    </Typography>
-                  </Alert>
-                )}
-
-                <Divider sx={{ my: 2 }} />
-
-                {/* Informações adicionais */}
-                <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-                  <Box>
-                    <Typography variant="caption" color="textSecondary" display="block">
-                      Prioridade
-                    </Typography>
-                    <Chip
-                      label={scannedRoom.room.priority || 'MÉDIA'}
-                      size="small"
-                      variant="outlined"
-                    />
-                  </Box>
-                  
-                  {scannedRoom.room.lastCleaned && (
-                    <Box>
-                      <Typography variant="caption" color="textSecondary" display="block">
-                        Última limpeza
-                      </Typography>
-                      <Typography variant="body2">
-                        {new Date(scannedRoom.room.lastCleaned).toLocaleDateString('pt-BR')}
-                      </Typography>
-                    </Box>
-                  )}
-                </Box>
-              </CardContent>
-            </Card>
-          </Box>
-        ) : scanning ? (
-          // Tela de escaneamento ativo
-          <Box sx={{ textAlign: 'center', py: 4 }}>
-            <Box
-              sx={{
-                width: 300,
-                height: 300,
-                mx: 'auto',
-                my: 3,
-                border: '3px solid #1aae96',
-                borderRadius: 2,
-                position: 'relative',
-                overflow: 'hidden',
-                bgcolor: '#000',
-              }}
-            >
-              {/* Simulação do viewfinder da câmera */}
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  width: 250,
-                  height: 250,
-                  border: '2px solid rgba(26, 174, 150, 0.7)',
-                  borderRadius: 1,
-                }}
-              />
-              
-              <QrCodeScanner 
-                sx={{ 
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  fontSize: 120, 
-                  color: 'rgba(26, 174, 150, 0.3)',
-                  animation: 'pulse 1.5s infinite',
-                  '@keyframes pulse': {
-                    '0%': { opacity: 0.3 },
-                    '50%': { opacity: 0.7 },
-                    '100%': { opacity: 0.3 },
-                  }
-                }} 
-              />
-            </Box>
-            
-            <Typography variant="h6" gutterBottom>
-              Escaneando...
-            </Typography>
-            <Typography variant="body2" color="textSecondary">
-              Aponte a câmera para o QR Code da sala
-            </Typography>
-            <CircularProgress size={24} sx={{ mt: 3 }} />
-            
-            <Button
-              variant="outlined"
-              onClick={() => setScanning(false)}
-              sx={{ mt: 3 }}
-            >
-              Cancelar Escaneamento
-            </Button>
-          </Box>
-        ) : (
-          // Tela inicial do scanner
-          <Box sx={{ py: 2 }}>
-            <Typography variant="body1" color="textSecondary" paragraph>
-              {description}
-            </Typography>
-            
-            <Box sx={{ textAlign: 'center', my: 4 }}>
-              <CameraAlt sx={{ fontSize: 100, color: '#1aae96', mb: 2, opacity: 0.8 }} />
-              <Typography variant="h6" gutterBottom>
-                Como escanear:
-              </Typography>
-              <Typography variant="body2" color="textSecondary" sx={{ maxWidth: 400, mx: 'auto' }}>
-                1. Localize o QR Code colado na sala<br />
-                2. Aponte a câmera do celular<br />
-                3. Centralize o QR Code no quadro<br />
-                4. Aguarde o reconhecimento automático
-              </Typography>
-            </Box>
-
-            {/* Entrada manual para desenvolvimento/teste */}
-            <Alert severity="info" sx={{ mb: 3 }}>
-              <Typography variant="body2">
-                <strong>Para teste:</strong> Digite um QR Code manualmente ou use o botão de simulação.
-              </Typography>
+      <DialogContent sx={{ p: 0, position: "relative" }}>
+        {error ? (
+          <Box sx={{ p: 4, textAlign: "center" }}>
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
             </Alert>
-            
-            <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Digite o QR Code (para teste)"
-                value={manualInput}
-                onChange={(e) => setManualInput(e.target.value)}
-                placeholder="Ex: QR-SALA-101"
-                onKeyPress={(e) => {
-                  if (e.key === 'Enter') {
-                    handleManualInput();
-                  }
-                }}
-              />
-              <Button
-                variant="outlined"
-                onClick={handleManualInput}
-                disabled={!manualInput.trim()}
-              >
-                Buscar
-              </Button>
-            </Box>
-          </Box>
-        )}
-      </DialogContent>
-      
-      <DialogActions sx={{ p: 3, pt: 0 }}>
-        <Button onClick={handleClose} disabled={loading}>
-          {scannedRoom ? 'Voltar' : 'Cancelar'}
-        </Button>
-        
-        {!scannedRoom && !scanning && !loading && (
-          <>
-            <Button
-              variant="outlined"
-              startIcon={<QrCodeScanner />}
-              onClick={simulateScan}
-              sx={{ mr: 1 }}
-            >
-              Simular Scan (Teste)
-            </Button>
             <Button
               variant="contained"
               startIcon={<CameraAlt />}
-              onClick={startScanner}
-              sx={{ bgcolor: '#1aae96', '&:hover': { bgcolor: '#128a78' } }}
+              onClick={requestCameraPermission}
             >
-              Iniciar Scanner
+              Permitir Câmera
             </Button>
+          </Box>
+        ) : loading ? (
+          <Box sx={{ 
+            display: "flex", 
+            justifyContent: "center", 
+            alignItems: "center", 
+            height: 400 
+          }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <>
+            <Box
+              id="qr-reader"
+              sx={{
+                width: "100%",
+                height: 400,
+                position: "relative",
+                overflow: "hidden",
+              }}
+            />
+
+            {/* Overlay com guias */}
+            <Box
+              sx={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                pointerEvents: "none",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Paper
+                sx={{
+                  width: 250,
+                  height: 250,
+                  border: "3px solid #1976d2",
+                  borderRadius: 2,
+                  bgcolor: "transparent",
+                  position: "relative",
+                }}
+              >
+                {/* Cantos decorativos */}
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: -3,
+                    left: -3,
+                    width: 30,
+                    height: 30,
+                    borderTop: "3px solid #1976d2",
+                    borderLeft: "3px solid #1976d2",
+                  }}
+                />
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: -3,
+                    right: -3,
+                    width: 30,
+                    height: 30,
+                    borderTop: "3px solid #1976d2",
+                    borderRight: "3px solid #1976d2",
+                  }}
+                />
+                <Box
+                  sx={{
+                    position: "absolute",
+                    bottom: -3,
+                    left: -3,
+                    width: 30,
+                    height: 30,
+                    borderBottom: "3px solid #1976d2",
+                    borderLeft: "3px solid #1976d2",
+                  }}
+                />
+                <Box
+                  sx={{
+                    position: "absolute",
+                    bottom: -3,
+                    right: -3,
+                    width: 30,
+                    height: 30,
+                    borderBottom: "3px solid #1976d2",
+                    borderRight: "3px solid #1976d2",
+                  }}
+                />
+              </Paper>
+            </Box>
+
+            {/* Instrução */}
+            <Box sx={{ 
+              textAlign: "center", 
+              p: 2,
+              bgcolor: "rgba(0,0,0,0.7)",
+              color: "white",
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0
+            }}>
+              <Typography variant="body2">
+                Posicione o QR Code dentro do quadro
+              </Typography>
+            </Box>
           </>
         )}
-        
-        {scannedRoom && !scannedRoom.isBeingCleaned && (
+      </DialogContent>
+
+      <DialogActions sx={{ p: 2, bgcolor: "#f5f5f5" }}>
+        <Box sx={{ display: "flex", gap: 1, flex: 1 }}>
           <Button
-            variant="contained"
-            startIcon={<CheckCircle />}
-            onClick={handleStartCleaning}
-            disabled={loading}
-            sx={{ bgcolor: '#1aae96', '&:hover': { bgcolor: '#128a78' } }}
+            variant="outlined"
+            startIcon={flash ? <FlashOff /> : <FlashOn />}
+            onClick={toggleFlash}
+            disabled={!scanner}
           >
-            {loading ? 'Iniciando...' : 'Iniciar Limpeza'}
+            {flash ? "Desligar" : "Ligar"}
           </Button>
-        )}
+          
+          <Button
+            variant="outlined"
+            startIcon={<SwitchCamera />}
+            onClick={switchCamera}
+            disabled={cameras.length <= 1}
+          >
+            Trocar
+          </Button>
+          
+          <Box sx={{ flex: 1 }} />
+          
+          <Button onClick={handleClose} variant="contained">
+            Fechar
+          </Button>
+        </Box>
       </DialogActions>
     </Dialog>
   );

@@ -1,4 +1,4 @@
-// src/controllers/roomController.js - VERSÃO CORRIGIDA E COMPLETA
+// src/controllers/roomController.js - VERSÃO COMPLETAMENTE CORRIGIDA
 const { PrismaClient } = require("@prisma/client");
 const crypto = require("crypto");
 const QRCode = require('qrcode');
@@ -33,17 +33,14 @@ async function generateUniqueQrCode({ type, name, location }) {
 }
 
 /**
- * ✅ GERAR IMAGEM DO QR CODE COM URL DE REDIRECIONAMENTO
+ * ✅ GERAR IMAGEM DO QR CODE COM URL QUE ABRE NO CELULAR
  */
 async function generateQRImage(qrCode, roomData, req) {
   try {
-    // ✅ CORREÇÃO: URL que será aberta no celular
-    const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-    const qrURL = `${baseURL}/qr/redirect?code=${encodeURIComponent(qrCode)}&roomId=${roomData.id}`;
+    // ✅ CORREÇÃO: URL QUE ABRE DIRETAMENTE NO FRONTEND
+    const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
+    const qrContent = `${frontendURL}/scan?roomId=${roomData.id}&qr=${encodeURIComponent(qrCode)}`;
     
-    // Conteúdo do QR Code: APENAS a URL (para abrir automaticamente no celular)
-    const qrContent = qrURL;
-
     const qrImage = await QRCode.toDataURL(qrContent, {
       errorCorrectionLevel: 'H',
       margin: 2,
@@ -54,7 +51,7 @@ async function generateQRImage(qrCode, roomData, req) {
       }
     });
 
-    return { qrImage, qrURL };
+    return { qrImage, qrContent };
   } catch (error) {
     console.error('🔥 Erro ao gerar imagem do QR:', error);
     return null;
@@ -63,7 +60,6 @@ async function generateQRImage(qrCode, roomData, req) {
 
 const roomController = {
   // ✅ BUSCAR AMBIENTE POR ID
-  // GET /api/rooms/:id
   getRoomById: async (req, res) => {
     try {
       const { id } = req.params;
@@ -86,10 +82,10 @@ const roomController = {
         });
       }
 
-      // ✅ ADICIONAR URL DE REDIRECIONAMENTO DO QR CODE
-      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      // ✅ ADICIONAR URL DO QR CODE (FRONTEND)
+      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const hasQRCode = !!(room.qrCode && room.qrCode.trim() !== '');
-      const qrURL = hasQRCode ? `${baseURL}/qr/redirect?code=${encodeURIComponent(room.qrCode)}&roomId=${room.id}` : null;
+      const qrURL = hasQRCode ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null;
 
       return res.json({ 
         success: true, 
@@ -114,7 +110,6 @@ const roomController = {
   },
 
   // ✅ ESCANEAR QR CODE (WORKER)
-  // GET /api/rooms/qr/:qrCode
   scanQRCode: async (req, res) => {
     try {
       const { qrCode } = req.params;
@@ -144,7 +139,7 @@ const roomController = {
 
       console.log(`✅ Sala encontrada: ${room.name} (ID: ${room.id})`);
 
-      // Verificar se há limpeza em andamento nesta sala hoje
+      // Verificar se há limpeza em andamento
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
@@ -152,9 +147,7 @@ const roomController = {
         where: {
           roomId: room.id,
           status: 'IN_PROGRESS',
-          startedAt: {
-            gte: today
-          }
+          startedAt: { gte: today }
         },
         include: {
           cleaner: {
@@ -164,6 +157,10 @@ const roomController = {
       });
 
       console.log(`📊 Status da sala: ${room.status}, Limpeza ativa: ${!!activeCleaning}`);
+
+      // ✅ URL para o frontend
+      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
+      const scanURL = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}`;
 
       return res.json({
         success: true,
@@ -184,6 +181,7 @@ const roomController = {
         isBeingCleaned: !!activeCleaning,
         currentCleaner: activeCleaning?.cleaner || null,
         activeCleaningId: activeCleaning?.id || null,
+        scanURL: scanURL, // ✅ URL para abrir no frontend
         message: activeCleaning 
           ? `Esta sala está sendo limpa por ${activeCleaning.cleaner?.name || 'um funcionário'}.` 
           : 'Sala disponível para limpeza.',
@@ -204,7 +202,6 @@ const roomController = {
   },
 
   // ✅ GERAR NOVO QR CODE PARA UMA SALA (COM URL)
-  // POST /api/rooms/:id/generate-qr
   generateNewQRCode: async (req, res) => {
     try {
       const { id } = req.params;
@@ -243,18 +240,22 @@ const roomController = {
       if (generateImage) {
         const qrData = await generateQRImage(newQRCode, updatedRoom, req);
         qrImage = qrData?.qrImage || null;
-        qrURL = qrData?.qrURL || null;
+        qrURL = qrData?.qrContent || null;
       }
+
+      // ✅ URL para o frontend
+      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
+      const scanURL = `${frontendURL}/scan?roomId=${updatedRoom.id}&qr=${encodeURIComponent(newQRCode)}`;
 
       return res.json({
         success: true,
         message: 'Novo QR Code gerado com sucesso',
         qrCode: updatedRoom.qrCode,
         qrImage: qrImage,
-        qrURL: qrURL, // ✅ URL para o celular
+        qrURL: scanURL, // ✅ URL para o celular
         room: updatedRoom,
         scanUrl: `/api/rooms/qr/${encodeURIComponent(newQRCode)}`,
-        redirectUrl: `/qr/redirect?code=${encodeURIComponent(newQRCode)}&roomId=${id}`,
+        redirectUrl: scanURL, // ✅ Mesma URL
         downloadUrl: `/api/qr/download/${id}`,
         generatedAt: new Date().toISOString()
       });
@@ -302,14 +303,14 @@ const roomController = {
         orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
       });
 
-      // ✅ ADICIONAR URL DO QR CODE
-      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      // ✅ ADICIONAR URL DO QR CODE (FRONTEND)
+      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const roomsWithQRInfo = rooms.map(room => ({
         ...room,
         hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
         qrStatus: room.qrCode && room.qrCode.trim() !== '' ? 'ACTIVE' : 'MISSING',
         scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
-        qrURL: room.qrCode ? `${baseURL}/qr/redirect?code=${encodeURIComponent(room.qrCode)}&roomId=${room.id}` : null
+        qrURL: room.qrCode ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null
       }));
 
       return res.json({ 
@@ -331,7 +332,7 @@ const roomController = {
     }
   },
 
-  // ✅ ADMIN: criar ambiente COM QR CODE E URL DE REDIRECIONAMENTO
+  // ✅ ADMIN: criar ambiente COM QR CODE E URL
   async createRoom(req, res) {
     try {
       const body = req.body || {};
@@ -369,12 +370,15 @@ const roomController = {
 
       const room = await prisma.room.create({ data });
 
-      // ✅ GERA IMAGEM DO QR CODE COM URL DE REDIRECIONAMENTO
+      // ✅ GERA IMAGEM DO QR CODE COM URL
       const qrData = await generateQRImage(qrCode, room, req);
-      const qrURL = qrData?.qrURL || `${req.protocol}://${req.get('host')}/qr/redirect?code=${encodeURIComponent(qrCode)}&roomId=${room.id}`;
+      
+      // ✅ URL para o frontend
+      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
+      const scanURL = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(qrCode)}`;
 
       console.log(`✅ Sala criada com sucesso: ${room.name} (ID: ${room.id})`);
-      console.log(`✅ QR Code URL: ${qrURL}`);
+      console.log(`✅ QR Code URL: ${scanURL}`);
 
       return res.status(201).json({
         success: true,
@@ -382,10 +386,8 @@ const roomController = {
         room,
         qrCode: room.qrCode,
         qrImage: qrData?.qrImage || null,
-        qrURL: qrURL, // ✅ URL para redirecionamento
-        scanUrl: `/api/rooms/qr/${encodeURIComponent(room.qrCode)}`,
-        downloadUrl: `/api/qr/download/${room.id}`,
-        redirectUrl: qrURL,
+        qrURL: scanURL, // ✅ URL para escaneamento
+        scanUrl: `/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}`,
         generatedAt: new Date().toISOString()
       });
     } catch (error) {
@@ -450,9 +452,9 @@ const roomController = {
 
       console.log(`✅ Sala atualizada: ${room.name}`);
 
-      // ✅ GERAR NOVA URL DE REDIRECIONAMENTO
-      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-      const qrURL = room.qrCode ? `${baseURL}/qr/redirect?code=${encodeURIComponent(room.qrCode)}&roomId=${room.id}` : null;
+      // ✅ GERAR NOVA URL PARA O FRONTEND
+      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
+      const qrURL = room.qrCode ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null;
 
       return res.json({ 
         success: true, 
@@ -461,7 +463,7 @@ const roomController = {
         qrInfo: {
           hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
           scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
-          qrURL: qrURL // ✅ URL para redirecionamento
+          qrURL: qrURL // ✅ URL para o frontend
         }
       });
     } catch (error) {
@@ -547,13 +549,13 @@ const roomController = {
         orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
       });
 
-      // ✅ ADICIONAR URL DE REDIRECIONAMENTO DO QR CODE
-      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      // ✅ ADICIONAR URL DO QR CODE (FRONTEND)
+      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const roomsWithQR = rooms.map(room => ({
         ...room,
         hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
         scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
-        qrURL: room.qrCode ? `${baseURL}/qr/redirect?code=${encodeURIComponent(room.qrCode)}&roomId=${room.id}` : null
+        qrURL: room.qrCode ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null
       }));
 
       console.log(`📊 ${rooms.length} salas disponíveis para limpeza`);
@@ -573,7 +575,7 @@ const roomController = {
     }
   },
 
-  // ✅ ADMIN: stats CORRIGIDO
+  // ✅ ADMIN: stats
   async getRoomStats(req, res) {
     try {
       const [total, pending, inProgress, completed, attention] = await Promise.all([
@@ -626,8 +628,7 @@ const roomController = {
     }
   },
 
-  // ✅ GERAR QR CODES PARA TODAS AS SALAS (COM URL DE REDIRECIONAMENTO)
-  // POST /api/rooms/generate-all-qr
+  // ✅ GERAR QR CODES PARA TODAS AS SALAS (COM URL)
   async generateAllQRCodes(req, res) {
     try {
       console.log('🔳 Iniciando geração de QR Codes para todas as salas');
@@ -648,17 +649,17 @@ const roomController = {
         failed: []
       };
 
-      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
 
       for (const room of rooms) {
         try {
           if (room.qrCode && room.qrCode.trim() !== '') {
-            const existingURL = `${baseURL}/qr/redirect?code=${encodeURIComponent(room.qrCode)}&roomId=${room.id}`;
+            const qrURL = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}`;
             results.alreadyHave.push({
               id: room.id,
               name: room.name,
               qrCode: room.qrCode,
-              qrURL: existingURL
+              qrURL: qrURL
             });
             continue;
           }
@@ -669,7 +670,7 @@ const roomController = {
             location: room.location
           });
 
-          const qrURL = `${baseURL}/qr/redirect?code=${encodeURIComponent(newQRCode)}&roomId=${room.id}`;
+          const qrURL = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(newQRCode)}`;
 
           await prisma.room.update({
             where: { id: room.id },
@@ -718,7 +719,6 @@ const roomController = {
   },
 
   // ✅ VERIFICAR QR CODE DE UMA SALA
-  // GET /api/rooms/:id/qr-status
   async getRoomQRStatus(req, res) {
     try {
       const { id } = req.params;
@@ -743,9 +743,9 @@ const roomController = {
 
       const hasQR = !!(room.qrCode && room.qrCode.trim() !== '');
       
-      // ✅ URL DE REDIRECIONAMENTO
-      const baseURL = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-      const qrURL = hasQR ? `${baseURL}/qr/redirect?code=${encodeURIComponent(room.qrCode)}&roomId=${room.id}` : null;
+      // ✅ URL PARA O FRONTEND
+      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
+      const qrURL = hasQR ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null;
 
       let qrData = null;
       if (hasQR) {
