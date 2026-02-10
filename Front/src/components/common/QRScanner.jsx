@@ -1,4 +1,4 @@
-// Front/src/components/common/QRScanner.jsx - VERSÃO SIMPLIFICADA E FUNCIONAL
+// Front/src/components/common/QRScanner.jsx - VERSÃO COM TROCA DE CÂMERA FUNCIONAL
 import React, { useEffect, useRef, useState } from "react";
 import {
   Dialog,
@@ -18,336 +18,267 @@ import {
   Close,
   CameraAlt,
   Refresh,
+  FlipCameraAndroid,
 } from "@mui/icons-material";
 
-// Tentar importar html5-qrcode dinamicamente
-let Html5QrcodeScanner;
-try {
-  const html5qrcode = require('html5-qrcode');
-  Html5QrcodeScanner = html5qrcode.Html5QrcodeScanner;
-} catch (err) {
-  console.warn("html5-qrcode não disponível, usando modo simples:", err);
-}
-
 const QRScanner = ({ open, onClose, onScan }) => {
-  const scannerRef = useRef(null);
   const videoRef = useRef(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [useSimpleMode, setUseSimpleMode] = useState(false);
+  const [stream, setStream] = useState(null);
+  const [facingMode, setFacingMode] = useState("environment"); // "environment" ou "user"
+  const [availableCameras, setAvailableCameras] = useState([]);
+  const [currentCameraId, setCurrentCameraId] = useState(null);
 
-  // Limpar recursos
-  const cleanup = () => {
-    console.log("🧹 Limpando recursos...");
-    
-    // Parar scanner da biblioteca
-    if (scannerRef.current) {
-      try {
-        scannerRef.current.clear && scannerRef.current.clear();
-      } catch (err) {
-        console.log("ℹ️ Scanner já limpo");
-      }
-      scannerRef.current = null;
+  // Detectar câmeras disponíveis
+  const detectCameras = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      setAvailableCameras(videoDevices);
+      console.log("📷 Câmeras detectadas:", videoDevices.length);
+    } catch (err) {
+      console.warn("Não foi possível listar câmeras:", err);
     }
-    
-    // Parar stream de vídeo
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject;
-      const tracks = stream.getTracks();
-      tracks.forEach(track => track.stop());
-      videoRef.current.srcObject = null;
-    }
-    
-    setCameraActive(false);
   };
 
-  // Inicializar scanner
-  const initScanner = async () => {
+  // Iniciar câmera
+  const startCamera = async (cameraId = null) => {
     try {
       setLoading(true);
       setError("");
-      cleanup();
       
-      console.log("🎬 Iniciando scanner...");
-      
-      // Verificar se temos a biblioteca
-      if (!Html5QrcodeScanner) {
-        console.log("📦 Usando modo simples (sem biblioteca)");
-        setUseSimpleMode(true);
-        await initSimpleCamera();
-        return;
+      // Parar stream anterior
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
       }
       
-      // Criar container se não existir
-      let container = document.getElementById('qr-scanner-container');
-      if (!container) {
-        console.log("🆕 Criando container...");
-        container = document.createElement('div');
-        container.id = 'qr-scanner-container';
-        container.style.width = '100%';
-        container.style.height = '400px';
-        container.style.position = 'relative';
-        
-        const dialogContent = document.querySelector('.MuiDialogContent-root');
-        if (dialogContent) {
-          // Limpar conteúdo anterior
-          while (dialogContent.firstChild) {
-            dialogContent.removeChild(dialogContent.firstChild);
-          }
-          dialogContent.appendChild(container);
-          console.log("✅ Container criado");
-        } else {
-          throw new Error("Não foi possível encontrar o container do dialog");
-        }
-      }
-      
-      // Configuração MÍNIMA
-      const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        rememberLastUsedCamera: true,
-      };
-      
-      console.log("⚙️ Criando scanner...");
-      
-      // Criar scanner
-      const scanner = new Html5QrcodeScanner('qr-scanner-container', config, false);
-      
-      // Salvar referência
-      scannerRef.current = scanner;
-      
-      // Renderizar
-      scanner.render(
-        (decodedText) => {
-          console.log("✅ QR Code detectado:", decodedText);
-          
-          // Parar scanner
-          scanner.clear().catch(() => {});
-          
-          // Processar
-          let scanData;
-          try {
-            scanData = JSON.parse(decodedText);
-          } catch {
-            scanData = decodedText;
-          }
-          
-          // Chamar callback
-          if (onScan) {
-            setTimeout(() => onScan(scanData), 100);
-          }
-        },
-        (errorMessage) => {
-          // Ignorar erros de QR não encontrado
-          if (!errorMessage.includes('NotFoundException')) {
-            console.log("ℹ️ Scanner:", errorMessage);
-          }
-        }
-      );
-      
-      setCameraActive(true);
-      console.log("🎉 Scanner inicializado!");
-      
-    } catch (err) {
-      console.error("❌ Erro ao iniciar scanner:", err);
-      
-      // Tentar modo simples
-      if (!useSimpleMode) {
-        console.log("🔄 Tentando modo simples...");
-        setUseSimpleMode(true);
-        await initSimpleCamera();
-      } else {
-        setError(`Não foi possível iniciar a câmera: ${err.message || 'Erro desconhecido'}`);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Modo simples: apenas mostrar a câmera
-  const initSimpleCamera = async () => {
-    try {
-      console.log("📸 Iniciando câmera simples...");
-      
-      // Solicitar permissão
-      const stream = await navigator.mediaDevices.getUserMedia({
+      // Construir constraints
+      let constraints = {
         video: {
-          facingMode: { ideal: "environment" },
           width: { ideal: 1280 },
           height: { ideal: 720 }
         }
-      });
+      };
       
-      // Criar elemento de vídeo
-      const container = document.getElementById('simple-camera-container');
-      if (container) {
-        const video = document.createElement('video');
-        video.id = 'camera-video';
+      // Se temos um ID específico, usar ele
+      if (cameraId) {
+        constraints.video.deviceId = { exact: cameraId };
+      } else {
+        // Senão, usar facingMode
+        constraints.video.facingMode = facingMode;
+      }
+      
+      console.log("🎬 Iniciando câmera com constraints:", constraints);
+      
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      setStream(mediaStream);
+      
+      // Encontrar o ID da câmera atual
+      const videoTrack = mediaStream.getVideoTracks()[0];
+      if (videoTrack) {
+        setCurrentCameraId(videoTrack.getSettings().deviceId);
+      }
+      
+      // Criar/atualizar elemento de vídeo
+      let video = document.getElementById('camera-preview');
+      if (!video) {
+        video = document.createElement('video');
+        video.id = 'camera-preview';
         video.autoplay = true;
         video.playsInline = true;
         video.muted = true;
         video.style.width = '100%';
         video.style.height = '100%';
         video.style.objectFit = 'cover';
-        
-        // Limpar container
-        container.innerHTML = '';
-        container.appendChild(video);
-        
-        // Atribuir stream
-        video.srcObject = stream;
-        video.play().catch(e => console.log("⚠️ Erro ao reproduzir:", e));
-        
-        // Salvar referência
-        videoRef.current = video;
-        
-        setCameraActive(true);
-        console.log("✅ Câmera simples iniciada");
       }
       
-    } catch (err) {
-      console.error("❌ Erro na câmera simples:", err);
-      setError(`Não foi possível acessar a câmera: ${err.message}`);
-    } finally {
+      video.srcObject = mediaStream;
+      
+      const container = document.getElementById('camera-container');
+      if (container) {
+        container.innerHTML = '';
+        container.appendChild(video);
+        videoRef.current = video;
+      }
+      
       setLoading(false);
+      console.log("✅ Câmera iniciada com sucesso");
+      
+    } catch (err) {
+      console.error("❌ Erro ao iniciar câmera:", err);
+      setLoading(false);
+      
+      let errorMsg = "Não foi possível acessar a câmera.";
+      if (err.name === 'NotAllowedError') {
+        errorMsg = "Permissão da câmera negada. Por favor, permita o acesso.";
+      } else if (err.name === 'NotFoundError') {
+        errorMsg = "Nenhuma câmera encontrada.";
+      } else if (err.name === 'OverconstrainedError') {
+        // Tentar a câmera frontal se a traseira falhar
+        if (facingMode === 'environment') {
+          console.log("🔄 Tentando câmera frontal...");
+          setFacingMode('user');
+          setTimeout(() => startCamera(), 100);
+          return;
+        }
+        errorMsg = "Câmera não atende aos requisitos.";
+      }
+      
+      setError(errorMsg);
     }
   };
 
-  // Efeito para iniciar quando abrir
+  // Trocar entre câmeras
+  const toggleCamera = async () => {
+    if (availableCameras.length === 0) {
+      // Se não detectou câmeras, alterna entre frontal/traseira
+      const newMode = facingMode === 'environment' ? 'user' : 'environment';
+      setFacingMode(newMode);
+      startCamera();
+      return;
+    }
+    
+    if (availableCameras.length === 1) {
+      alert("⚠️ Apenas uma câmera disponível neste dispositivo.");
+      return;
+    }
+    
+    // Encontrar índice da câmera atual
+    let currentIndex = availableCameras.findIndex(cam => cam.deviceId === currentCameraId);
+    if (currentIndex === -1) currentIndex = 0;
+    
+    // Próxima câmera
+    const nextIndex = (currentIndex + 1) % availableCameras.length;
+    const nextCamera = availableCameras[nextIndex];
+    
+    console.log(`🔄 Alternando para câmera ${nextIndex}:`, nextCamera.label || 'Desconhecida');
+    startCamera(nextCamera.deviceId);
+  };
+
+  // Inicializar quando abrir
   useEffect(() => {
     if (open) {
-      console.log("🚀 Modal aberto - Iniciando scanner");
-      // Pequeno delay para garantir que o modal está renderizado
-      setTimeout(() => {
-        initScanner();
-      }, 300);
+      console.log("🚀 Iniciando scanner...");
+      detectCameras();
+      startCamera();
     }
   }, [open]);
 
-  // Cleanup ao fechar
+  // Cleanup
   useEffect(() => {
     return () => {
-      console.log("🔚 Componente desmontado");
       cleanup();
     };
   }, []);
 
+  const cleanup = () => {
+    console.log("🧹 Limpando recursos...");
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+  };
+
   const handleClose = () => {
-    console.log("❌ Fechando scanner");
     cleanup();
     if (onClose) onClose();
   };
 
   const handleRetry = () => {
-    console.log("🔄 Tentando novamente");
     setError("");
-    setUseSimpleMode(false);
-    initScanner();
+    startCamera();
+  };
+
+  // Entrada manual de QR Code
+  const handleManualInput = () => {
+    const qrCode = prompt("Digite ou cole o código do QR Code:");
+    if (qrCode && qrCode.trim() && onScan) {
+      onScan(qrCode.trim());
+    }
   };
 
   return (
     <Dialog
       open={open}
       onClose={handleClose}
-      maxWidth="md"
+      maxWidth="sm"
       fullWidth
-      fullScreen={window.innerWidth < 768}
+      fullScreen={window.innerWidth < 600}
       PaperProps={{
         sx: {
-          borderRadius: window.innerWidth >= 768 ? 3 : 0,
+          borderRadius: window.innerWidth >= 600 ? 2 : 0,
           overflow: 'hidden',
         },
       }}
     >
       <DialogTitle sx={{ 
-        bgcolor: "#1976d2", 
-        color: "white",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        py: 2,
+        bgcolor: '#1976d2', 
+        color: 'white',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        py: 1.5,
       }}>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <QrCodeScanner />
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <QrCodeScanner sx={{ fontSize: 24 }} />
+          <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1.1rem' }}>
             Scanner QR Code
           </Typography>
         </Box>
-        <IconButton onClick={handleClose} sx={{ color: "white" }}>
+        <IconButton onClick={handleClose} sx={{ color: 'white', p: 0.5 }}>
           <Close />
         </IconButton>
       </DialogTitle>
 
-      <DialogContent 
-        sx={{ 
-          p: 0,
-          position: 'relative',
-          minHeight: 400,
-          backgroundColor: '#000',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
-        {error ? (
-          <Box sx={{ p: 3, textAlign: 'center' }}>
-            <Alert severity="error" sx={{ mb: 2 }}>
-              <Typography>{error}</Typography>
-            </Alert>
-            <Button
-              variant="contained"
-              startIcon={<Refresh />}
-              onClick={handleRetry}
-            >
-              Tentar Novamente
-            </Button>
-          </Box>
-        ) : loading ? (
-          <Box sx={{ 
-            display: 'flex', 
-            flexDirection: 'column',
-            alignItems: 'center', 
-            justifyContent: 'center',
-            height: 400,
-            gap: 2
-          }}>
-            <CircularProgress size={60} sx={{ color: 'white' }} />
-            <Typography color="white">
-              Inicializando scanner...
-            </Typography>
-          </Box>
-        ) : cameraActive ? (
+      <DialogContent sx={{ p: 0, position: 'relative' }}>
+        {error && (
+          <Alert 
+            severity="error" 
+            sx={{ 
+              m: 2,
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              zIndex: 10,
+            }}
+          >
+            {error}
+          </Alert>
+        )}
+
+        {/* Container da câmera */}
+        <Box 
+          id="camera-container"
+          sx={{ 
+            width: '100%', 
+            height: 400, 
+            backgroundColor: '#000',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          {loading && (
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column',
+              alignItems: 'center', 
+              justifyContent: 'center',
+              height: '100%',
+              gap: 2,
+            }}>
+              <CircularProgress sx={{ color: 'white' }} />
+              <Typography color="white" variant="body2">
+                Iniciando câmera...
+              </Typography>
+            </Box>
+          )}
+        </Box>
+
+        {/* Overlay com guias */}
+        {!loading && !error && (
           <>
-            {/* Container para o scanner html5-qrcode */}
-            {!useSimpleMode && (
-              <Box 
-                id="qr-scanner-wrapper"
-                sx={{
-                  width: '100%',
-                  height: 400,
-                  position: 'relative',
-                }}
-              >
-                {/* O scanner será renderizado aqui */}
-              </Box>
-            )}
-            
-            {/* Container para câmera simples */}
-            {useSimpleMode && (
-              <Box 
-                id="simple-camera-container"
-                sx={{
-                  width: '100%',
-                  height: 400,
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              />
-            )}
-            
-            {/* Overlay com guias */}
             <Box
               sx={{
                 position: 'absolute',
@@ -359,89 +290,135 @@ const QRScanner = ({ open, onClose, onScan }) => {
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
+                zIndex: 5,
               }}
             >
               <Paper
                 sx={{
                   width: 250,
                   height: 250,
-                  border: '3px solid #1976d2',
-                  borderRadius: 2,
+                  border: '2px solid #1976d2',
+                  borderRadius: 1,
                   backgroundColor: 'transparent',
                   position: 'relative',
                 }}
               >
-                {/* Cantos */}
+                {/* Cantos decorativos */}
                 {[
-                  { top: -3, left: -3, borderTop: true, borderLeft: true },
-                  { top: -3, right: -3, borderTop: true, borderRight: true },
-                  { bottom: -3, left: -3, borderBottom: true, borderLeft: true },
-                  { bottom: -3, right: -3, borderBottom: true, borderRight: true },
+                  { top: -2, left: -2, borderTop: true, borderLeft: true },
+                  { top: -2, right: -2, borderTop: true, borderRight: true },
+                  { bottom: -2, left: -2, borderBottom: true, borderLeft: true },
+                  { bottom: -2, right: -2, borderBottom: true, borderRight: true },
                 ].map((corner, i) => (
                   <Box
                     key={i}
                     sx={{
                       position: 'absolute',
                       ...corner,
-                      width: 30,
-                      height: 30,
-                      ...(corner.borderTop && { borderTop: '3px solid #1976d2' }),
-                      ...(corner.borderRight && { borderRight: '3px solid #1976d2' }),
-                      ...(corner.borderBottom && { borderBottom: '3px solid #1976d2' }),
-                      ...(corner.borderLeft && { borderLeft: '3px solid #1976d2' }),
+                      width: 20,
+                      height: 20,
+                      ...(corner.borderTop && { borderTop: '2px solid #1976d2' }),
+                      ...(corner.borderRight && { borderRight: '2px solid #1976d2' }),
+                      ...(corner.borderBottom && { borderBottom: '2px solid #1976d2' }),
+                      ...(corner.borderLeft && { borderLeft: '2px solid #1976d2' }),
                     }}
                   />
                 ))}
               </Paper>
             </Box>
             
-            {/* Instrução */}
+            {/* Instruções */}
             <Box
               sx={{
                 position: 'absolute',
                 bottom: 0,
                 left: 0,
                 right: 0,
-                p: 2,
+                p: 1.5,
                 backgroundColor: 'rgba(0,0,0,0.7)',
                 color: 'white',
                 textAlign: 'center',
+                zIndex: 5,
               }}
             >
-              <Typography variant="body2">
-                {useSimpleMode 
-                  ? '📷 Câmera ativa - Use um leitor externo de QR Code' 
-                  : '📱 Posicione o QR Code dentro do quadro'}
+              <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>
+                📱 Posicione o QR Code dentro do quadro
               </Typography>
             </Box>
           </>
-        ) : (
-          <Box sx={{ p: 3, textAlign: 'center' }}>
-            <CameraAlt sx={{ fontSize: 64, color: 'white', mb: 2 }} />
-            <Typography variant="h6" gutterBottom color="white">
-              Câmera não disponível
-            </Typography>
-            <Typography color="rgba(255,255,255,0.8)" sx={{ mb: 3 }}>
-              Não foi possível acessar a câmera.
-            </Typography>
-            <Button
-              variant="contained"
-              startIcon={<CameraAlt />}
-              onClick={handleRetry}
-            >
-              Tentar Novamente
-            </Button>
-          </Box>
         )}
       </DialogContent>
 
-      <DialogActions sx={{ p: 2, bgcolor: '#f5f5f5' }}>
-        <Button onClick={handleRetry} startIcon={<Refresh />} sx={{ mr: 1 }}>
-          Reiniciar
-        </Button>
-        <Button onClick={handleClose} variant="contained">
-          Fechar
-        </Button>
+      {/* Controles */}
+      <DialogActions sx={{ 
+        p: 2, 
+        bgcolor: '#f5f5f5',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+      }}>
+        {/* Botões principais */}
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'center',
+          gap: 2,
+          width: '100%',
+        }}>
+          {/* Botão grande para trocar câmera */}
+          <Button
+            variant="contained"
+            startIcon={<FlipCameraAndroid />}
+            onClick={toggleCamera}
+            sx={{
+              minWidth: 180,
+              py: 1.5,
+              bgcolor: '#1976d2',
+              '&:hover': { bgcolor: '#1565c0' }
+            }}
+            disabled={loading}
+          >
+            {facingMode === 'environment' ? 'Câmera Frontal' : 'Câmera Traseira'}
+          </Button>
+          
+          {/* Botão para entrada manual */}
+          <Button
+            variant="outlined"
+            onClick={handleManualInput}
+            sx={{
+              minWidth: 180,
+              py: 1.5,
+            }}
+            disabled={loading}
+          >
+            Digitar Código
+          </Button>
+        </Box>
+
+        {/* Botões de ação */}
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between',
+          width: '100%',
+          gap: 1,
+        }}>
+          <Button
+            onClick={handleRetry}
+            startIcon={<Refresh />}
+            variant="outlined"
+            size="small"
+          >
+            Reiniciar Câmera
+          </Button>
+          
+          <Button
+            onClick={handleClose}
+            variant="contained"
+            size="small"
+            sx={{ bgcolor: '#1976d2' }}
+          >
+            Fechar
+          </Button>
+        </Box>
       </DialogActions>
     </Dialog>
   );
