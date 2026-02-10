@@ -1,4 +1,4 @@
-// Front/src/components/common/QRScanner.jsx - VERSÃO COM TROCA DE CÂMERA FUNCIONAL
+// Front/src/components/common/QRScanner.jsx - VERSÃO REACT PURA
 import React, { useEffect, useRef, useState } from "react";
 import {
   Dialog,
@@ -27,23 +27,10 @@ const QRScanner = ({ open, onClose, onScan }) => {
   const [loading, setLoading] = useState(true);
   const [stream, setStream] = useState(null);
   const [facingMode, setFacingMode] = useState("environment"); // "environment" ou "user"
-  const [availableCameras, setAvailableCameras] = useState([]);
-  const [currentCameraId, setCurrentCameraId] = useState(null);
-
-  // Detectar câmeras disponíveis
-  const detectCameras = async () => {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === 'videoinput');
-      setAvailableCameras(videoDevices);
-      console.log("📷 Câmeras detectadas:", videoDevices.length);
-    } catch (err) {
-      console.warn("Não foi possível listar câmeras:", err);
-    }
-  };
+  const [showVideo, setShowVideo] = useState(false);
 
   // Iniciar câmera
-  const startCamera = async (cameraId = null) => {
+  const startCamera = async () => {
     try {
       setLoading(true);
       setError("");
@@ -51,63 +38,30 @@ const QRScanner = ({ open, onClose, onScan }) => {
       // Parar stream anterior
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
+        setStream(null);
       }
       
-      // Construir constraints
-      let constraints = {
+      console.log("🎬 Iniciando câmera...");
+      
+      // Solicitar acesso à câmera
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
+          facingMode: facingMode,
           width: { ideal: 1280 },
           height: { ideal: 720 }
         }
-      };
+      });
       
-      // Se temos um ID específico, usar ele
-      if (cameraId) {
-        constraints.video.deviceId = { exact: cameraId };
-      } else {
-        // Senão, usar facingMode
-        constraints.video.facingMode = facingMode;
-      }
-      
-      console.log("🎬 Iniciando câmera com constraints:", constraints);
-      
-      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       setStream(mediaStream);
-      
-      // Encontrar o ID da câmera atual
-      const videoTrack = mediaStream.getVideoTracks()[0];
-      if (videoTrack) {
-        setCurrentCameraId(videoTrack.getSettings().deviceId);
-      }
-      
-      // Criar/atualizar elemento de vídeo
-      let video = document.getElementById('camera-preview');
-      if (!video) {
-        video = document.createElement('video');
-        video.id = 'camera-preview';
-        video.autoplay = true;
-        video.playsInline = true;
-        video.muted = true;
-        video.style.width = '100%';
-        video.style.height = '100%';
-        video.style.objectFit = 'cover';
-      }
-      
-      video.srcObject = mediaStream;
-      
-      const container = document.getElementById('camera-container');
-      if (container) {
-        container.innerHTML = '';
-        container.appendChild(video);
-        videoRef.current = video;
-      }
-      
+      setShowVideo(true);
       setLoading(false);
+      
       console.log("✅ Câmera iniciada com sucesso");
       
     } catch (err) {
       console.error("❌ Erro ao iniciar câmera:", err);
       setLoading(false);
+      setShowVideo(false);
       
       let errorMsg = "Não foi possível acessar a câmera.";
       if (err.name === 'NotAllowedError') {
@@ -119,7 +73,7 @@ const QRScanner = ({ open, onClose, onScan }) => {
         if (facingMode === 'environment') {
           console.log("🔄 Tentando câmera frontal...");
           setFacingMode('user');
-          setTimeout(() => startCamera(), 100);
+          setTimeout(() => startCamera(), 300);
           return;
         }
         errorMsg = "Câmera não atende aos requisitos.";
@@ -129,59 +83,46 @@ const QRScanner = ({ open, onClose, onScan }) => {
     }
   };
 
-  // Trocar entre câmeras
-  const toggleCamera = async () => {
-    if (availableCameras.length === 0) {
-      // Se não detectou câmeras, alterna entre frontal/traseira
-      const newMode = facingMode === 'environment' ? 'user' : 'environment';
-      setFacingMode(newMode);
-      startCamera();
-      return;
-    }
-    
-    if (availableCameras.length === 1) {
-      alert("⚠️ Apenas uma câmera disponível neste dispositivo.");
-      return;
-    }
-    
-    // Encontrar índice da câmera atual
-    let currentIndex = availableCameras.findIndex(cam => cam.deviceId === currentCameraId);
-    if (currentIndex === -1) currentIndex = 0;
-    
-    // Próxima câmera
-    const nextIndex = (currentIndex + 1) % availableCameras.length;
-    const nextCamera = availableCameras[nextIndex];
-    
-    console.log(`🔄 Alternando para câmera ${nextIndex}:`, nextCamera.label || 'Desconhecida');
-    startCamera(nextCamera.deviceId);
+  // Trocar entre câmeras frontal/traseira
+  const toggleCamera = () => {
+    const newMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(newMode);
+    startCamera();
   };
+
+  // Configurar o elemento de vídeo quando stream mudar
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(e => {
+        console.warn("⚠️ Erro ao reproduzir vídeo:", e);
+      });
+    }
+  }, [stream, showVideo]);
 
   // Inicializar quando abrir
   useEffect(() => {
     if (open) {
       console.log("🚀 Iniciando scanner...");
-      detectCameras();
       startCamera();
     }
   }, [open]);
 
-  // Cleanup
+  // Cleanup quando fechar
   useEffect(() => {
     return () => {
-      cleanup();
+      if (stream) {
+        console.log("🧹 Limpando recursos...");
+        stream.getTracks().forEach(track => track.stop());
+      }
     };
-  }, []);
-
-  const cleanup = () => {
-    console.log("🧹 Limpando recursos...");
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-    }
-  };
+  }, [stream]);
 
   const handleClose = () => {
-    cleanup();
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+    setShowVideo(false);
     if (onClose) onClose();
   };
 
@@ -196,6 +137,26 @@ const QRScanner = ({ open, onClose, onScan }) => {
     if (qrCode && qrCode.trim() && onScan) {
       onScan(qrCode.trim());
     }
+  };
+
+  // Capturar imagem para leitura manual
+  const captureImage = () => {
+    if (!videoRef.current) return;
+    
+    const canvas = document.createElement('canvas');
+    const video = videoRef.current;
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Aqui você poderia enviar a imagem para análise de QR Code
+    // Por enquanto, apenas mostra um alerta
+    alert('Imagem capturada! Em uma versão futura, isso poderia ser enviado para análise de QR Code.');
+    
+    // Para debug: salvar a imagem
+    // const imageData = canvas.toDataURL('image/jpeg');
+    // console.log('📸 Imagem capturada');
   };
 
   return (
@@ -249,17 +210,14 @@ const QRScanner = ({ open, onClose, onScan }) => {
         )}
 
         {/* Container da câmera */}
-        <Box 
-          id="camera-container"
-          sx={{ 
-            width: '100%', 
-            height: 400, 
-            backgroundColor: '#000',
-            position: 'relative',
-            overflow: 'hidden',
-          }}
-        >
-          {loading && (
+        <Box sx={{ 
+          width: '100%', 
+          height: 400, 
+          backgroundColor: '#000',
+          position: 'relative',
+          overflow: 'hidden',
+        }}>
+          {loading ? (
             <Box sx={{ 
               display: 'flex', 
               flexDirection: 'column',
@@ -273,80 +231,108 @@ const QRScanner = ({ open, onClose, onScan }) => {
                 Iniciando câmera...
               </Typography>
             </Box>
-          )}
-        </Box>
-
-        {/* Overlay com guias */}
-        {!loading && !error && (
-          <>
-            <Box
-              sx={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                pointerEvents: 'none',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                zIndex: 5,
-              }}
-            >
-              <Paper
+          ) : showVideo && stream ? (
+            <>
+              {/* Elemento de vídeo do React */}
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  transform: facingMode === 'user' ? 'scaleX(-1)' : 'none',
+                }}
+              />
+              
+              {/* Overlay com guias */}
+              <Box
                 sx={{
-                  width: 250,
-                  height: 250,
-                  border: '2px solid #1976d2',
-                  borderRadius: 1,
-                  backgroundColor: 'transparent',
-                  position: 'relative',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  pointerEvents: 'none',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
                 }}
               >
-                {/* Cantos decorativos */}
-                {[
-                  { top: -2, left: -2, borderTop: true, borderLeft: true },
-                  { top: -2, right: -2, borderTop: true, borderRight: true },
-                  { bottom: -2, left: -2, borderBottom: true, borderLeft: true },
-                  { bottom: -2, right: -2, borderBottom: true, borderRight: true },
-                ].map((corner, i) => (
-                  <Box
-                    key={i}
-                    sx={{
-                      position: 'absolute',
-                      ...corner,
-                      width: 20,
-                      height: 20,
-                      ...(corner.borderTop && { borderTop: '2px solid #1976d2' }),
-                      ...(corner.borderRight && { borderRight: '2px solid #1976d2' }),
-                      ...(corner.borderBottom && { borderBottom: '2px solid #1976d2' }),
-                      ...(corner.borderLeft && { borderLeft: '2px solid #1976d2' }),
-                    }}
-                  />
-                ))}
-              </Paper>
-            </Box>
-            
-            {/* Instruções */}
-            <Box
-              sx={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                p: 1.5,
-                backgroundColor: 'rgba(0,0,0,0.7)',
-                color: 'white',
-                textAlign: 'center',
-                zIndex: 5,
-              }}
-            >
-              <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>
-                📱 Posicione o QR Code dentro do quadro
+                <Paper
+                  sx={{
+                    width: 250,
+                    height: 250,
+                    border: '2px solid #1976d2',
+                    borderRadius: 1,
+                    backgroundColor: 'transparent',
+                    position: 'relative',
+                  }}
+                >
+                  {/* Cantos decorativos */}
+                  {[
+                    { top: -2, left: -2, borderTop: true, borderLeft: true },
+                    { top: -2, right: -2, borderTop: true, borderRight: true },
+                    { bottom: -2, left: -2, borderBottom: true, borderLeft: true },
+                    { bottom: -2, right: -2, borderBottom: true, borderRight: true },
+                  ].map((corner, i) => (
+                    <Box
+                      key={i}
+                      sx={{
+                        position: 'absolute',
+                        ...corner,
+                        width: 20,
+                        height: 20,
+                        ...(corner.borderTop && { borderTop: '2px solid #1976d2' }),
+                        ...(corner.borderRight && { borderRight: '2px solid #1976d2' }),
+                        ...(corner.borderBottom && { borderBottom: '2px solid #1976d2' }),
+                        ...(corner.borderLeft && { borderLeft: '2px solid #1976d2' }),
+                      }}
+                    />
+                  ))}
+                </Paper>
+              </Box>
+              
+              {/* Instruções */}
+              <Box
+                sx={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  p: 1.5,
+                  backgroundColor: 'rgba(0,0,0,0.7)',
+                  color: 'white',
+                  textAlign: 'center',
+                }}
+              >
+                <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>
+                  📱 Posicione o QR Code dentro do quadro
+                </Typography>
+              </Box>
+            </>
+          ) : (
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column',
+              alignItems: 'center', 
+              justifyContent: 'center',
+              height: '100%',
+              gap: 2,
+              p: 3,
+            }}>
+              <CameraAlt sx={{ fontSize: 64, color: 'white' }} />
+              <Typography color="white" variant="h6" textAlign="center">
+                Câmera não disponível
+              </Typography>
+              <Typography color="rgba(255,255,255,0.8)" textAlign="center">
+                Não foi possível acessar a câmera do dispositivo.
               </Typography>
             </Box>
-          </>
-        )}
+          )}
+        </Box>
       </DialogContent>
 
       {/* Controles */}
@@ -363,8 +349,9 @@ const QRScanner = ({ open, onClose, onScan }) => {
           justifyContent: 'center',
           gap: 2,
           width: '100%',
+          flexWrap: 'wrap',
         }}>
-          {/* Botão grande para trocar câmera */}
+          {/* Botão para trocar câmera */}
           <Button
             variant="contained"
             startIcon={<FlipCameraAndroid />}
@@ -380,17 +367,18 @@ const QRScanner = ({ open, onClose, onScan }) => {
             {facingMode === 'environment' ? 'Câmera Frontal' : 'Câmera Traseira'}
           </Button>
           
-          {/* Botão para entrada manual */}
+          {/* Botão para capturar imagem */}
           <Button
             variant="outlined"
-            onClick={handleManualInput}
+            startIcon={<CameraAlt />}
+            onClick={captureImage}
             sx={{
               minWidth: 180,
               py: 1.5,
             }}
-            disabled={loading}
+            disabled={loading || !showVideo}
           >
-            Digitar Código
+            Capturar Imagem
           </Button>
         </Box>
 
@@ -401,14 +389,24 @@ const QRScanner = ({ open, onClose, onScan }) => {
           width: '100%',
           gap: 1,
         }}>
-          <Button
-            onClick={handleRetry}
-            startIcon={<Refresh />}
-            variant="outlined"
-            size="small"
-          >
-            Reiniciar Câmera
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              onClick={handleManualInput}
+              variant="outlined"
+              size="small"
+            >
+              Digitar Código
+            </Button>
+            
+            <Button
+              onClick={handleRetry}
+              startIcon={<Refresh />}
+              variant="outlined"
+              size="small"
+            >
+              Reiniciar
+            </Button>
+          </Box>
           
           <Button
             onClick={handleClose}
