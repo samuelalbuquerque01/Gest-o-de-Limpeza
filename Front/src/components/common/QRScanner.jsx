@@ -1,4 +1,4 @@
-// Front/src/components/common/QRScanner.jsx - VERSÃO OTIMIZADA PARA CELULAR
+// Front/src/components/common/QRScanner.jsx - VERSÃO COM SOLUÇÃO DEFINITIVA PARA CELULAR
 import React, { useEffect, useRef, useState } from "react";
 import {
   Dialog,
@@ -12,7 +12,12 @@ import {
   IconButton,
   Alert,
   Paper,
-  Snackbar,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
+  Divider,
+  Collapse,
 } from "@mui/material";
 import {
   QrCodeScanner,
@@ -22,41 +27,64 @@ import {
   FlashOff,
   SwitchCamera,
   Info,
-  Error as ErrorIcon,
+  Settings,
+  Refresh,
+  Smartphone,
+  Warning,
   CheckCircle,
+  ExpandMore,
+  ExpandLess,
 } from "@mui/icons-material";
 import { Html5QrcodeScanner } from "html5-qrcode";
 
 const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true }) => {
   const scannerRef = useRef(null);
   const [scanner, setScanner] = useState(null);
-  const [cameraId, setCameraId] = useState(null);
-  const [cameras, setCameras] = useState([]);
-  const [flash, setFlash] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [permissionStatus, setPermissionStatus] = useState(null);
-  const [showInstructions, setShowInstructions] = useState(true);
-  const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "info" });
+  const [showTroubleshoot, setShowTroubleshoot] = useState(false);
+  const [deviceInfo, setDeviceInfo] = useState({});
+  const [permissionState, setPermissionState] = useState("prompt"); // prompt, granted, denied
 
-  const showSnackbar = (message, severity = "info") => {
-    setSnackbar({ open: true, message, severity });
-  };
+  // Detectar dispositivo e informações
+  useEffect(() => {
+    const detectDevice = () => {
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      const isChrome = /Chrome/i.test(navigator.userAgent);
+      const isSafari = /Safari/i.test(navigator.userAgent) && !/Chrome/i.test(navigator.userAgent);
+      
+      setDeviceInfo({
+        isMobile,
+        isIOS,
+        isAndroid,
+        isChrome,
+        isSafari,
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+      });
+    };
+    
+    detectDevice();
+  }, []);
 
-  // Verificar status da permissão da câmera
-  const checkCameraPermission = async () => {
+  // Verificar status da permissão
+  const checkPermission = async () => {
     try {
-      // Verificar se a API de permissions está disponível
       if (navigator.permissions && navigator.permissions.query) {
-        const permissionStatus = await navigator.permissions.query({ name: 'camera' });
-        setPermissionStatus(permissionStatus.state);
+        const permission = await navigator.permissions.query({ name: 'camera' });
+        setPermissionState(permission.state);
         
-        permissionStatus.onchange = () => {
-          setPermissionStatus(permissionStatus.state);
+        permission.onchange = () => {
+          setPermissionState(permission.state);
+          if (permission.state === 'granted') {
+            initScanner();
+          }
         };
       }
     } catch (err) {
-      console.log("API de permissions não disponível:", err.message);
+      console.log("API de permissões não disponível");
     }
   };
 
@@ -64,64 +92,66 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
     try {
       setLoading(true);
       setError("");
-      setShowInstructions(false);
+      setShowTroubleshoot(false);
 
       // Limpar scanner anterior
       if (scanner) {
-        await scanner.clear().catch(console.error);
+        await scanner.clear().catch(() => {});
       }
 
-      // Verificar se estamos em ambiente HTTPS (necessário para câmera no navegador)
-      if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
-        setError("A câmera requer HTTPS. Por favor, acesse via HTTPS.");
-        showSnackbar("A câmera requer conexão segura (HTTPS)", "warning");
+      // Verificar HTTPS
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const isHttps = window.location.protocol === 'https:';
+      
+      if (!isLocalhost && !isHttps) {
+        setError("❌ A câmera só funciona em HTTPS ou localhost.");
         setLoading(false);
         return;
       }
 
-      // Verificar se a API de mídia está disponível
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setError("Seu navegador não suporta acesso à câmera. Tente usar Chrome, Firefox ou Safari.");
-        showSnackbar("Navegador não suporta câmera", "error");
+      // Verificar se está em iframe (bloqueia câmera)
+      if (window.self !== window.top) {
+        setError("❌ O scanner não funciona dentro de iframes. Abra em uma janela separada.");
         setLoading(false);
         return;
       }
 
-      // Tentar detectar câmeras disponíveis
+      // Solicitar permissão da câmera de forma direta primeiro
       try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-        setCameras(videoDevices);
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
         
-        if (videoDevices.length === 0) {
-          setError("Nenhuma câmera detectada no dispositivo.");
-          showSnackbar("Nenhuma câmera encontrada", "warning");
-          setLoading(false);
-          return;
-        }
-      } catch (deviceError) {
-        console.log("Não foi possível listar dispositivos:", deviceError);
+        // Parar stream imediatamente (só queríamos a permissão)
+        stream.getTracks().forEach(track => track.stop());
+        
+        console.log("✅ Permissão da câmera concedida");
+        setPermissionState("granted");
+      } catch (permError) {
+        console.error("❌ Erro na permissão:", permError);
+        throw permError;
       }
 
-      // Configurar scanner
+      // Configurar e iniciar scanner
       const config = {
         fps: 10,
         qrbox: { width: 250, height: 250 },
         rememberLastUsedCamera: true,
-        supportedScanTypes: [2], // SCAN_TYPE_CAMERA
-        showTorchButtonIfSupported: true,
+        supportedScanTypes: [2],
       };
 
       const html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", config, false);
 
-      // Sucesso na leitura
       html5QrcodeScanner.render(
-        (decodedText, decodedResult) => {
-          console.log("✅ QR Code lido:", decodedText);
-          showSnackbar("QR Code detectado!", "success");
+        (decodedText) => {
+          console.log("✅ QR Code detectado:", decodedText);
           
           // Parar scanner
-          html5QrcodeScanner.clear().catch(console.error);
+          html5QrcodeScanner.clear().catch(() => {});
           
           // Processar resultado
           let scanData;
@@ -132,7 +162,9 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
           }
           
           // Chamar callback
-          if (onScan) onScan(scanData);
+          if (onScan) {
+            setTimeout(() => onScan(scanData), 100);
+          }
         },
         (errorMessage) => {
           // Ignorar erros de "não encontrado"
@@ -143,152 +175,184 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
       );
 
       setScanner(html5QrcodeScanner);
-      showSnackbar("Scanner iniciado. Posicione o QR Code.", "info");
+      setError("");
+      
     } catch (err) {
-      console.error("🔥 Erro ao inicializar scanner:", err);
+      console.error("🔥 Erro crítico no scanner:", err);
       
-      // Mensagens de erro mais amigáveis
-      let errorMsg = "Não foi possível acessar a câmera.";
-      
-      if (err.name === 'NotAllowedError') {
-        errorMsg = "Permissão da câmera negada. Por favor, permita o acesso nas configurações do navegador.";
+      let errorMessage = "Não foi possível acessar a câmera.";
+      let showTroubleshoot = true;
+
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        errorMessage = `
+          Permissão da câmera negada ou bloqueada.
+          
+          📱 **Para permitir no celular:**
+          
+          1. Toque no **ícone de cadeado 🔒** na barra de endereço
+          2. Em "Permissões do site", procure por **"Câmera"**
+          3. Mude para **"Permitir"**
+          4. Recarregue esta página
+          
+          🔧 **Se não aparecer:**
+          - Vá em Configurações do Navegador > Site Settings > Camera
+          - Limpe cache e dados do navegador
+          - Reinicie o navegador
+        `;
+        setPermissionState("denied");
       } else if (err.name === 'NotFoundError') {
-        errorMsg = "Nenhuma câmera encontrada no dispositivo.";
+        errorMessage = "Nenhuma câmera encontrada no dispositivo.";
+        showTroubleshoot = false;
       } else if (err.name === 'NotReadableError') {
-        errorMsg = "Câmera está sendo usada por outro aplicativo.";
-      } else if (err.name === 'OverconstrainedError') {
-        errorMsg = "Câmera não atende aos requisitos.";
+        errorMessage = "A câmera está sendo usada por outro aplicativo. Feche outros apps que usam câmera e tente novamente.";
+      } else if (err.message && err.message.includes('iframe')) {
+        errorMessage = "Não é possível usar câmera dentro de iframes. Por favor, abra o scanner em uma nova aba.";
+        showTroubleshoot = false;
       }
-      
-      setError(errorMsg);
-      showSnackbar(errorMsg, "error");
+
+      setError(errorMessage);
+      setShowTroubleshoot(showTroubleshoot);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    checkCameraPermission();
+    checkPermission();
     
     if (open && scanning) {
-      // Pequeno delay para garantir que o modal está aberto
+      // Pequeno delay para o modal abrir completamente
       setTimeout(() => {
         initScanner();
-      }, 300);
+      }, 500);
     }
 
     return () => {
       if (scanner) {
-        scanner.clear().catch(console.error);
+        scanner.clear().catch(() => {});
       }
     };
   }, [open, scanning]);
 
   const handleClose = () => {
     if (scanner) {
-      scanner.clear().catch(console.error);
+      scanner.clear().catch(() => {});
     }
     setScanner(null);
-    setShowInstructions(true);
     if (onClose) onClose();
   };
 
-  const requestCameraPermission = async () => {
+  const requestPermissionDirectly = async () => {
     try {
       setLoading(true);
       setError("");
       
-      // Solicitar permissão de maneira mais direta
+      // Técnica mais direta para forçar o prompt de permissão
       const constraints = {
         video: {
-          facingMode: { ideal: "environment" }, // Câmera traseira
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          facingMode: "environment",
+          width: { min: 640, ideal: 1280, max: 1920 },
+          height: { min: 480, ideal: 720, max: 1080 }
         }
       };
       
-      // Primeiro, solicitar permissão com uma stream simples
+      // Esta linha deve mostrar o prompt nativo do navegador
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
-      // Parar a stream imediatamente (só queremos a permissão)
+      // Imediatamente parar o stream
       stream.getTracks().forEach(track => {
         track.stop();
       });
       
-      showSnackbar("Permissão concedida! Iniciando scanner...", "success");
+      // Pequeno delay para garantir que a permissão foi registrada
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Pequeno delay antes de reiniciar
-      setTimeout(() => {
-        initScanner();
-      }, 500);
+      // Reiniciar o scanner
+      await initScanner();
       
     } catch (err) {
-      console.error("❌ Erro ao solicitar permissão:", err);
-      
-      let errorMsg = "Não foi possível acessar a câmera.";
-      
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        errorMsg = `
-          Permissão da câmera negada.
-          
-          Para permitir:
-          1. Clique no ícone de cadeado na barra de endereço
-          2. Em "Câmera", selecione "Permitir"
-          3. Recarregue a página
-          
-          Ou vá para Configurações do Navegador > Privacidade > Câmera
-        `;
-      } else if (err.name === 'NotFoundError') {
-        errorMsg = "Nenhuma câmera encontrada no dispositivo.";
-      } else if (err.name === 'NotReadableError') {
-        errorMsg = "Câmera está sendo usada por outro aplicativo. Feche outros apps que usam câmera.";
-      }
-      
-      setError(errorMsg);
-      showSnackbar("Erro na permissão da câmera", "error");
+      console.error("Erro direto:", err);
+      setError(`
+        ❌ O navegador não mostrou o prompt de permissão.
+        
+        **Soluções:**
+        
+        1. **Limpar configurações do site:**
+           - Toque no ícone de cadeado 🔒 > Configurações do site
+           - Procure por "Câmera" e limpe as configurações
+           - Recarregue a página
+        
+        2. **Permitir manualmente:**
+           - Ajustes > ${deviceInfo.isChrome ? 'Chrome' : 'Safari'} > Câmera
+           - Encontre este site e permita a câmera
+        
+        3. **Alternativas:**
+           - Tente em modo anônimo/privado
+           - Use outro navegador (Chrome funciona melhor)
+           - Reinicie o celular
+      `);
+      setShowTroubleshoot(true);
       setLoading(false);
     }
   };
 
-  const toggleFlash = () => {
-    setFlash(!flash);
-    showSnackbar(flash ? "Flash desligado" : "Flash ligado", "info");
-  };
-
-  const switchCamera = async () => {
-    if (scanner && cameras.length > 1) {
-      try {
-        const currentIndex = cameras.findIndex(cam => cam.id === cameraId);
-        const nextIndex = (currentIndex + 1) % cameras.length;
-        const nextCamera = cameras[nextIndex];
-        
-        await scanner.clear();
-        setCameraId(nextCamera.id);
-        showSnackbar(`Câmera alterada: ${nextCamera.label || 'Câmera ' + (nextIndex + 1)}`, "info");
-        await initScanner();
-      } catch (err) {
-        console.error("Erro ao trocar câmera:", err);
-        showSnackbar("Erro ao trocar câmera", "error");
-      }
+  const openBrowserSettings = () => {
+    // Tenta abrir páginas de configuração baseadas no navegador
+    let settingsUrl = '';
+    
+    if (deviceInfo.isChrome && deviceInfo.isAndroid) {
+      settingsUrl = 'chrome://settings/content/camera';
+    } else if (deviceInfo.isChrome && deviceInfo.isIOS) {
+      settingsUrl = 'app-settings:';
+    } else if (deviceInfo.isSafari) {
+      // Safari não tem URL direta, mostra instruções
+      setError(prev => prev + "\n\n📱 **Para Safari iOS:**\n1. Ajustes > Safari\n2. Câmera\n3. Permitir para este site");
+      return;
+    }
+    
+    if (settingsUrl) {
+      window.open(settingsUrl, '_blank');
+    } else {
+      setError(prev => prev + "\n\n🔧 **Vá manualmente em:**\nConfigurações do celular > Navegador > Permissões de site > Câmera");
     }
   };
 
-  const openCameraSettings = () => {
-    // Tentar abrir as configurações do navegador (nem todos os navegadores suportam)
-    if (navigator.userAgent.includes('Chrome')) {
-      window.open('chrome://settings/content/camera');
-    } else if (navigator.userAgent.includes('Firefox')) {
-      window.open('about:preferences#privacy');
-    } else if (navigator.userAgent.includes('Safari')) {
-      showSnackbar("No Safari: Ajustes > Safari > Câmera", "info");
+  const clearSiteData = () => {
+    if ('caches' in window) {
+      caches.keys().then(cacheNames => {
+        cacheNames.forEach(cacheName => {
+          caches.delete(cacheName);
+        });
+      });
     }
-    showSnackbar("Configure a permissão da câmera nas configurações do navegador", "info");
+    
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        registrations.forEach(registration => {
+          registration.unregister();
+        });
+      });
+    }
+    
+    // Limpar localStorage e sessionStorage
+    localStorage.clear();
+    sessionStorage.clear();
+    
+    setError("Cache limpo! Por favor, RECARREGUE A PÁGINA (toque em F5 ou ícone de recarregar).");
   };
 
-  const retryScanner = () => {
-    setError("");
-    initScanner();
-  };
+  const TestCameraButton = () => (
+    <Button
+      variant="outlined"
+      startIcon={<CameraAlt />}
+      onClick={() => {
+        window.open('/test-camera', '_blank');
+      }}
+      sx={{ mt: 2 }}
+    >
+      Testar Câmera Separadamente
+    </Button>
+  );
 
   return (
     <Dialog
@@ -296,12 +360,12 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
       onClose={handleClose}
       maxWidth="md"
       fullWidth
-      fullScreen={window.innerWidth < 600} // Tela cheia em mobile
+      fullScreen={window.innerWidth < 768}
       PaperProps={{
         sx: {
-          borderRadius: window.innerWidth >= 600 ? 3 : 0,
+          borderRadius: window.innerWidth >= 768 ? 3 : 0,
           overflow: "hidden",
-          height: window.innerWidth < 600 ? "100vh" : "auto",
+          maxHeight: "90vh",
         },
       }}
     >
@@ -311,79 +375,135 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        py: 2,
+        py: { xs: 1.5, sm: 2 },
       }}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <QrCodeScanner />
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+          <QrCodeScanner sx={{ fontSize: { xs: 24, sm: 28 } }} />
+          <Typography variant="h6" sx={{ fontWeight: 600, fontSize: { xs: '1rem', sm: '1.25rem' } }}>
             Scanner QR Code
           </Typography>
         </Box>
-        <IconButton onClick={handleClose} sx={{ color: "white" }}>
+        <IconButton 
+          onClick={handleClose} 
+          sx={{ color: "white", p: { xs: 0.5, sm: 1 } }}
+          size="small"
+        >
           <Close />
         </IconButton>
       </DialogTitle>
 
-      <DialogContent sx={{ p: 0, position: "relative", flex: 1 }}>
-        {showInstructions && !error && (
-          <Box sx={{ p: 3, textAlign: "center", bgcolor: "#f5f5f5" }}>
-            <CameraAlt sx={{ fontSize: 64, color: "#1976d2", mb: 2 }} />
-            <Typography variant="h6" gutterBottom>
-              Permissão da Câmera Necessária
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Para escanear QR Codes, precisamos acessar sua câmera.
-              Clique no botão abaixo para permitir o acesso.
-            </Typography>
-            <Button
-              variant="contained"
-              startIcon={<CameraAlt />}
-              onClick={requestCameraPermission}
-              size="large"
-            >
-              Permitir Câmera
-            </Button>
-          </Box>
-        )}
-
+      <DialogContent sx={{ p: 0, position: "relative", overflow: 'auto' }}>
         {error ? (
-          <Box sx={{ p: 3, textAlign: "center" }}>
-            <ErrorIcon sx={{ fontSize: 64, color: "#d32f2f", mb: 2 }} />
+          <Box sx={{ p: { xs: 2, sm: 3 } }}>
             <Alert 
               severity="error" 
-              sx={{ mb: 2, textAlign: "left" }}
-              action={
-                <Button color="inherit" size="small" onClick={openCameraSettings}>
-                  Configurações
-                </Button>
-              }
+              icon={<Warning />}
+              sx={{ mb: 2 }}
             >
-              <Typography variant="body1" sx={{ fontWeight: 600, mb: 1 }}>
-                Erro na Câmera
-              </Typography>
-              <Typography variant="body2">
-                {error}
+              <Typography variant="body1" sx={{ fontWeight: 600, whiteSpace: 'pre-line' }}>
+                {error.split('\n')[0]}
               </Typography>
             </Alert>
             
-            <Box sx={{ display: "flex", gap: 2, justifyContent: "center", mt: 3 }}>
-              <Button
-                variant="outlined"
-                onClick={() => {
-                  setError("");
-                  setShowInstructions(true);
-                }}
-              >
-                Voltar
-              </Button>
+            <Paper sx={{ p: 2, bgcolor: '#fffde7', mb: 2 }}>
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-line' }}>
+                {error}
+              </Typography>
+            </Paper>
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2 }}>
               <Button
                 variant="contained"
                 startIcon={<CameraAlt />}
-                onClick={requestCameraPermission}
+                onClick={requestPermissionDirectly}
+                size="large"
+                fullWidth
               >
-                Tentar Novamente
+                Tentar Permitir Câmera Novamente
               </Button>
+              
+              <Button
+                variant="outlined"
+                startIcon={<Settings />}
+                onClick={openBrowserSettings}
+                size="large"
+                fullWidth
+              >
+                Abrir Configurações do Navegador
+              </Button>
+              
+              <Button
+                variant="outlined"
+                startIcon={<Refresh />}
+                onClick={clearSiteData}
+                size="large"
+                fullWidth
+                color="warning"
+              >
+                Limpar Cache e Dados do Site
+              </Button>
+              
+              <Button
+                variant="outlined"
+                onClick={() => window.location.reload()}
+                size="large"
+                fullWidth
+              >
+                🔄 Recarregar Página
+              </Button>
+
+              <TestCameraButton />
             </Box>
+
+            <Button
+              fullWidth
+              onClick={() => setShowTroubleshoot(!showTroubleshoot)}
+              endIcon={showTroubleshoot ? <ExpandLess /> : <ExpandMore />}
+              sx={{ mt: 2 }}
+            >
+              Solução de Problemas Detalhada
+            </Button>
+
+            <Collapse in={showTroubleshoot}>
+              <Paper sx={{ p: 2, mt: 1, bgcolor: '#f5f5f5' }}>
+                <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
+                  Guia Completo para Habilitar Câmera:
+                </Typography>
+                <List dense>
+                  {deviceInfo.isAndroid && deviceInfo.isChrome && (
+                    <>
+                      <ListItem>
+                        <ListItemIcon><Smartphone /></ListItemIcon>
+                        <ListItemText 
+                          primary="Chrome no Android" 
+                          secondary="1. Toque nos 3 pontos ⋮ → Configurações → Configurações do site → Câmera → Permitir"
+                        />
+                      </ListItem>
+                      <Divider />
+                    </>
+                  )}
+                  {deviceInfo.isIOS && deviceInfo.isSafari && (
+                    <>
+                      <ListItem>
+                        <ListItemIcon><Smartphone /></ListItemIcon>
+                        <ListItemText 
+                          primary="Safari no iPhone/iPad" 
+                          secondary="1. Ajustes → Safari → Câmera → Permitir"
+                        />
+                      </ListItem>
+                      <Divider />
+                    </>
+                  )}
+                  <ListItem>
+                    <ListItemIcon><Info /></ListItemIcon>
+                    <ListItemText 
+                      primary="Solução Geral" 
+                      secondary="• Use modo anônimo/privado\n• Tente outro navegador (Chrome funciona melhor)\n• Reinicie o celular\n• Atualize o navegador"
+                    />
+                  </ListItem>
+                </List>
+              </Paper>
+            </Collapse>
           </Box>
         ) : loading ? (
           <Box sx={{ 
@@ -391,13 +511,18 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
             flexDirection: "column",
             justifyContent: "center", 
             alignItems: "center", 
-            height: 400,
+            height: 300,
             gap: 2
           }}>
-            <CircularProgress size={60} />
+            <CircularProgress size={50} />
             <Typography variant="body1" color="text.secondary">
-              Inicializando scanner...
+              Preparando scanner...
             </Typography>
+            {permissionState === "prompt" && (
+              <Typography variant="caption" color="text.secondary">
+                Aguardando permissão da câmera...
+              </Typography>
+            )}
           </Box>
         ) : (
           <>
@@ -405,10 +530,10 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
               id="qr-reader"
               sx={{
                 width: "100%",
-                height: "100%",
-                minHeight: 400,
+                height: 400,
                 position: "relative",
                 overflow: "hidden",
+                bgcolor: "#000",
               }}
             />
 
@@ -436,7 +561,6 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
                   position: "relative",
                 }}
               >
-                {/* Cantos decorativos */}
                 {[ 
                   { top: -3, left: -3, borderTop: true, borderLeft: true },
                   { top: -3, right: -3, borderTop: true, borderRight: true },
@@ -460,16 +584,11 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
               </Paper>
             </Box>
 
-            {/* Instrução */}
             <Box sx={{ 
               textAlign: "center", 
               p: 2,
               bgcolor: "rgba(0,0,0,0.7)",
               color: "white",
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              right: 0
             }}>
               <Typography variant="body2">
                 📱 Posicione o QR Code dentro do quadro
@@ -480,59 +599,10 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
       </DialogContent>
 
       <DialogActions sx={{ p: 2, bgcolor: "#f5f5f5", borderTop: "1px solid #e0e0e0" }}>
-        <Box sx={{ display: "flex", gap: 1, flex: 1, flexWrap: "wrap" }}>
-          {cameras.length > 1 && (
-            <Button
-              variant="outlined"
-              startIcon={<SwitchCamera />}
-              onClick={switchCamera}
-              size="small"
-            >
-              Trocar Câmera
-            </Button>
-          )}
-          
-          <Button
-            variant="outlined"
-            startIcon={flash ? <FlashOff /> : <FlashOn />}
-            onClick={toggleFlash}
-            disabled={!scanner}
-            size="small"
-          >
-            {flash ? "Flash Off" : "Flash"}
-          </Button>
-          
-          <Box sx={{ flex: 1 }} />
-          
-          <Button 
-            variant="outlined" 
-            onClick={retryScanner}
-            size="small"
-          >
-            Reiniciar
-          </Button>
-          
-          <Button onClick={handleClose} variant="contained" size="small">
-            Fechar
-          </Button>
-        </Box>
+        <Button onClick={handleClose} variant="contained">
+          Fechar
+        </Button>
       </DialogActions>
-
-      {/* Snackbar para feedback */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={3000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert 
-          onClose={() => setSnackbar({ ...snackbar, open: false })} 
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
     </Dialog>
   );
 };
