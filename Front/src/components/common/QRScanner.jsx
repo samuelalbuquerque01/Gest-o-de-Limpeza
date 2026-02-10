@@ -1,4 +1,4 @@
-// Front/src/components/common/QRScanner.jsx - VERSÃO DEFINITIVA
+// Front/src/components/common/QRScanner.jsx - VERSÃO CORRIGIDA
 import React, { useEffect, useRef, useState } from "react";
 import {
   Dialog,
@@ -18,54 +18,60 @@ import {
   Close,
   CameraAlt,
   Refresh,
+  Videocam,
+  VideocamOff,
 } from "@mui/icons-material";
-import { Html5QrcodeScanner } from "html5-qrcode";
+
+// Importação condicional da biblioteca html5-qrcode
+let Html5QrcodeScanner;
+try {
+  Html5QrcodeScanner = require('html5-qrcode').Html5QrcodeScanner;
+} catch (err) {
+  console.warn("html5-qrcode não disponível:", err);
+}
 
 const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true }) => {
   const scannerRef = useRef(null);
-  const qrReaderRef = useRef(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   const [scanner, setScanner] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [stream, setStream] = useState(null);
+  const [scanningActive, setScanningActive] = useState(false);
+  const [useFallback, setUseFallback] = useState(false);
 
-  // Criar elemento qr-reader manualmente se não existir
-  const ensureQRReaderElement = () => {
-    let qrReaderElement = document.getElementById("qr-reader");
+  // Limpar tudo
+  const cleanup = () => {
+    console.log("🧹 Limpando recursos...");
     
-    if (!qrReaderElement) {
-      console.log("🆕 Criando elemento qr-reader manualmente...");
-      qrReaderElement = document.createElement("div");
-      qrReaderElement.id = "qr-reader";
-      qrReaderElement.style.width = "100%";
-      qrReaderElement.style.height = "400px";
-      qrReaderElement.style.position = "relative";
-      qrReaderElement.style.overflow = "hidden";
-      qrReaderElement.style.backgroundColor = "#000";
-      qrReaderElement.style.display = "block";
-      qrReaderElement.style.visibility = "visible";
-      qrReaderElement.style.opacity = "1";
-      
-      // Encontrar o container no DialogContent
-      const dialogContent = document.querySelector('[data-testid="qr-scanner-content"]');
-      if (dialogContent) {
-        dialogContent.appendChild(qrReaderElement);
-        console.log("✅ Elemento qr-reader criado no DialogContent");
-      } else {
-        // Fallback: criar em um lugar visível
-        const body = document.body;
-        body.appendChild(qrReaderElement);
-        qrReaderElement.style.position = "fixed";
-        qrReaderElement.style.top = "50%";
-        qrReaderElement.style.left = "50%";
-        qrReaderElement.style.transform = "translate(-50%, -50%)";
-        qrReaderElement.style.zIndex = "9999";
-        console.log("⚠️ Elemento qr-reader criado no body (fallback)");
-      }
+    // Parar stream de vídeo
+    if (stream) {
+      stream.getTracks().forEach(track => {
+        track.stop();
+      });
+      setStream(null);
     }
     
-    return qrReaderElement;
+    // Limpar scanner da biblioteca
+    if (scanner) {
+      try {
+        scanner.clear && scanner.clear();
+      } catch (err) {
+        console.log("ℹ️ Scanner já limpo:", err.message);
+      }
+      setScanner(null);
+    }
+    
+    // Limpar referências
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    
+    setCameraReady(false);
+    setScanningActive(false);
   };
 
   // Solicitar permissão da câmera
@@ -73,31 +79,47 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
     try {
       setLoading(true);
       setError("");
+      cleanup();
       
       console.log("📱 Solicitando permissão da câmera...");
       
-      // Primeiro, garantir que temos o elemento
-      ensureQRReaderElement();
+      // Verificar se a API está disponível
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("API de mídia não suportada pelo navegador");
+      }
       
-      // Testar se podemos acessar a câmera
-      const stream = await navigator.mediaDevices.getUserMedia({
+      // Solicitar permissão com configuração simples
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: "environment" },
           width: { ideal: 1280 },
           height: { ideal: 720 }
-        }
+        },
+        audio: false
       });
       
-      // Parar o stream imediatamente (só queríamos a permissão)
-      stream.getTracks().forEach(track => track.stop());
-      
+      setStream(mediaStream);
       setPermissionGranted(true);
       console.log("✅ Permissão da câmera concedida");
       
-      // Pequeno delay antes de inicializar o scanner
+      // Iniciar visualização da câmera
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+        videoRef.current.play().catch(err => {
+          console.warn("Erro ao reproduzir vídeo:", err);
+        });
+      }
+      
+      // Pequeno delay antes de tentar inicializar o scanner
       setTimeout(() => {
-        initScanner();
-      }, 300);
+        if (!Html5QrcodeScanner) {
+          console.log("📦 html5-qrcode não disponível, usando fallback");
+          setUseFallback(true);
+          startFallbackScanner();
+        } else {
+          initHtml5QrScanner();
+        }
+      }, 500);
       
     } catch (err) {
       console.error("❌ Erro na permissão:", err);
@@ -105,76 +127,61 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
       setLoading(false);
       
       let errorMsg = "Não foi possível acessar a câmera.";
-      if (err.name === 'NotAllowedError') {
-        errorMsg = "Permissão da câmera negada. Por favor, permita o acesso nas configurações do navegador.";
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        errorMsg = "Permissão da câmera negada. Clique em 'Permitir' quando solicitado.";
       } else if (err.name === 'NotFoundError') {
         errorMsg = "Nenhuma câmera encontrada no dispositivo.";
+      } else if (err.name === 'NotReadableError') {
+        errorMsg = "Câmera está sendo usada por outro aplicativo.";
+      } else if (err.name === 'OverconstrainedError') {
+        errorMsg = "Câmera não atende aos requisitos mínimos.";
       }
       
       setError(errorMsg);
     }
   };
 
-  // Inicializar o scanner
-  const initScanner = async () => {
+  // Inicializar scanner com html5-qrcode
+  const initHtml5QrScanner = async () => {
     try {
-      setLoading(true);
-      setError("");
-      setCameraReady(false);
+      console.log("🔄 Inicializando html5-qrcode scanner...");
       
-      console.log("🔄 Inicializando scanner...");
-      
-      // Limpar scanner anterior
-      if (scanner) {
-        try {
-          await scanner.clear();
-          console.log("✅ Scanner anterior limpo");
-        } catch (err) {
-          console.log("ℹ️ Nenhum scanner anterior para limpar");
-        }
+      // Verificar se a biblioteca está disponível
+      if (!Html5QrcodeScanner) {
+        throw new Error("Biblioteca html5-qrcode não carregada");
       }
       
-      // Garantir que o elemento existe
-      const qrReaderElement = ensureQRReaderElement();
-      
-      // Verificar se o elemento está realmente no DOM
-      if (!document.body.contains(qrReaderElement)) {
-        throw new Error("Elemento qr-reader não está no DOM");
-      }
-      
-      // Verificar se o elemento está visível
-      const style = window.getComputedStyle(qrReaderElement);
-      console.log("🔍 Estilo do elemento qr-reader:", {
-        display: style.display,
-        visibility: style.visibility,
-        opacity: style.opacity,
-        width: style.width,
-        height: style.height
-      });
-      
-      // Pequeno delay para garantir que o DOM está estável
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Configurar scanner
+      // Configuração simplificada sem scanTypes
       const config = {
         fps: 10,
         qrbox: { width: 250, height: 250 },
         rememberLastUsedCamera: true,
-        supportedScanTypes: [2], // SCAN_TYPE_CAMERA
-        showTorchButtonIfSupported: false,
+        // Removido supportedScanTypes
       };
       
-      console.log("⚙️ Criando Html5QrcodeScanner...");
-      const html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", config, false);
+      // Criar container para o scanner
+      const scannerContainer = document.getElementById('scanner-container');
+      if (!scannerContainer) {
+        throw new Error("Container do scanner não encontrado");
+      }
+      
+      // Limpar container
+      scannerContainer.innerHTML = '';
+      
+      // Criar novo scanner
+      const qrScanner = new Html5QrcodeScanner(
+        "scanner-container",
+        config,
+        false // verbose
+      );
       
       // Renderizar scanner
-      console.log("🎬 Renderizando scanner...");
-      html5QrcodeScanner.render(
-        (decodedText) => {
+      qrScanner.render(
+        (decodedText, decodedResult) => {
           console.log("✅ QR Code detectado:", decodedText);
           
           // Parar scanner
-          html5QrcodeScanner.clear().catch(() => {});
+          qrScanner.clear().catch(() => {});
           
           // Processar resultado
           let scanData;
@@ -197,143 +204,61 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
         }
       );
       
-      setScanner(html5QrcodeScanner);
+      setScanner(qrScanner);
       setCameraReady(true);
-      console.log("🎉 Scanner inicializado com sucesso!");
-      
-    } catch (err) {
-      console.error("🔥 Erro ao inicializar scanner:", err);
-      setError(`Erro: ${err.message || "Falha ao inicializar scanner"}`);
-      
-      // Tentar método alternativo se o erro for "element not found"
-      if (err.message.includes("not found") || err.message.includes("not exist")) {
-        console.log("🔄 Tentando método alternativo...");
-        setTimeout(() => initScannerAlternative(), 500);
-      }
-    } finally {
+      setScanningActive(true);
       setLoading(false);
-    }
-  };
-
-  // Método alternativo para inicializar scanner
-  const initScannerAlternative = () => {
-    console.log("🔄 Tentando método alternativo de inicialização...");
-    
-    try {
-      // Usar um container diferente
-      const alternativeContainer = document.createElement("div");
-      alternativeContainer.id = "qr-reader-alt";
-      alternativeContainer.style.width = "100%";
-      alternativeContainer.style.height = "400px";
-      alternativeContainer.style.backgroundColor = "#000";
-      alternativeContainer.style.position = "relative";
+      console.log("🎉 Scanner html5-qrcode inicializado com sucesso!");
       
-      // Adicionar ao DialogContent
-      const dialogContent = document.querySelector('[data-testid="qr-scanner-content"]');
-      if (dialogContent) {
-        // Remover elemento antigo se existir
-        const oldElement = document.getElementById("qr-reader");
-        if (oldElement) oldElement.remove();
-        
-        dialogContent.appendChild(alternativeContainer);
-        
-        // Criar scanner com ID alternativo
-        const config = {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          rememberLastUsedCamera: true,
-          supportedScanTypes: [2],
-        };
-        
-        const altScanner = new Html5QrcodeScanner("qr-reader-alt", config, false);
-        
-        altScanner.render(
-          (decodedText) => {
-            console.log("✅ QR Code detectado (método alternativo):", decodedText);
-            altScanner.clear().catch(() => {});
-            
-            let scanData;
-            try {
-              scanData = JSON.parse(decodedText);
-            } catch {
-              scanData = decodedText;
-            }
-            
-            if (onScan) onScan(scanData);
-          },
-          (errorMessage) => {
-            if (!errorMessage.includes("NotFoundException")) {
-              console.log("ℹ️ Scanner (alt):", errorMessage);
-            }
-          }
-        );
-        
-        setScanner(altScanner);
-        setCameraReady(true);
-        console.log("🎉 Scanner alternativo inicializado!");
-      }
     } catch (err) {
-      console.error("❌ Método alternativo também falhou:", err);
-      setError("Não foi possível iniciar a câmera. Tente recarregar a página.");
+      console.error("🔥 Erro ao inicializar html5-qrcode scanner:", err);
+      
+      // Tentar método fallback
+      console.log("🔄 Tentando método fallback...");
+      setUseFallback(true);
+      startFallbackScanner();
     }
   };
 
-  // Limpar scanner
-  const clearScanner = async () => {
-    if (scanner) {
-      try {
-        console.log("🧹 Limpando scanner...");
-        await scanner.clear();
-        console.log("✅ Scanner limpo");
-      } catch (err) {
-        console.log("ℹ️ Erro ao limpar scanner (pode já estar limpo):", err);
-      }
+  // Método fallback usando apenas vídeo
+  const startFallbackScanner = () => {
+    console.log("🎬 Iniciando scanner fallback...");
+    
+    if (!stream || !videoRef.current) {
+      setError("Stream de vídeo não disponível para fallback");
+      setLoading(false);
+      return;
     }
     
-    // Remover elementos criados
-    const qrReaderElement = document.getElementById("qr-reader");
-    if (qrReaderElement) {
-      qrReaderElement.remove();
-    }
+    setCameraReady(true);
+    setScanningActive(true);
+    setLoading(false);
+    console.log("✅ Scanner fallback pronto");
     
-    const altElement = document.getElementById("qr-reader-alt");
-    if (altElement) {
-      altElement.remove();
-    }
-    
-    setScanner(null);
-    setCameraReady(false);
-    setPermissionGranted(false);
+    // Aqui você pode adicionar lógica de leitura manual de QR code
+    // ou simplesmente usar a visualização da câmera
   };
 
-  // Efeito principal
+  // Efeito para iniciar quando o modal abrir
   useEffect(() => {
     if (open && scanning) {
       console.log("🚀 Scanner: Modal aberto, iniciando...");
-      
-      // Pequeno delay para o modal abrir completamente
-      const timer = setTimeout(() => {
-        requestCameraPermission();
-      }, 500);
-      
-      return () => {
-        clearTimeout(timer);
-      };
+      requestCameraPermission();
     }
   }, [open, scanning]);
 
   // Cleanup quando fechar
   useEffect(() => {
     return () => {
-      console.log("🔚 Scanner: Componente desmontado, limpando...");
-      clearScanner();
+      console.log("🔚 Scanner: Componente desmontado");
+      cleanup();
     };
   }, []);
 
   // Fechar modal
   const handleClose = () => {
     console.log("❌ Fechando scanner...");
-    clearScanner();
+    cleanup();
     if (onClose) onClose();
   };
 
@@ -341,8 +266,20 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
   const handleRetry = async () => {
     console.log("🔄 Tentando novamente...");
     setError("");
-    await clearScanner();
+    setUseFallback(false);
+    await cleanup();
     await requestCameraPermission();
+  };
+
+  // Capturar imagem do vídeo para debug
+  const captureImage = () => {
+    if (videoRef.current && canvasRef.current) {
+      const context = canvasRef.current.getContext('2d');
+      canvasRef.current.width = videoRef.current.videoWidth;
+      canvasRef.current.height = videoRef.current.videoHeight;
+      context.drawImage(videoRef.current, 0, 0);
+      console.log("📸 Imagem capturada para debug");
+    }
   };
 
   return (
@@ -379,7 +316,6 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
       </DialogTitle>
 
       <DialogContent 
-        data-testid="qr-scanner-content"
         sx={{ 
           p: 0, 
           position: "relative", 
@@ -388,6 +324,7 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
           flexDirection: "column",
           justifyContent: "center",
           alignItems: "center",
+          backgroundColor: "#000",
         }}
       >
         {error ? (
@@ -395,11 +332,6 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
             <Alert 
               severity="error" 
               sx={{ mb: 2 }}
-              action={
-                <Button color="inherit" size="small" onClick={handleRetry}>
-                  Tentar
-                </Button>
-              }
             >
               <Typography variant="body1" sx={{ fontWeight: 600 }}>
                 Erro no Scanner
@@ -412,7 +344,7 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
             <Box sx={{ mt: 2 }}>
               <Button
                 variant="contained"
-                startIcon={<Refresh />}
+                startIcon={<CameraAlt />}
                 onClick={handleRetry}
                 size="large"
               >
@@ -430,15 +362,64 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
             width: "100%",
             gap: 2
           }}>
-            <CircularProgress size={60} />
-            <Typography variant="body1" color="text.secondary">
-              {permissionGranted ? "Inicializando câmera..." : "Solicitando permissão..."}
+            <CircularProgress size={60} sx={{ color: "white" }} />
+            <Typography variant="body1" color="white">
+              {permissionGranted ? "Inicializando scanner..." : "Solicitando permissão..."}
             </Typography>
           </Box>
         ) : cameraReady ? (
           <>
-            {/* O elemento qr-reader será inserido aqui pelo JavaScript */}
-            <Box sx={{ width: "100%", height: 400, position: "relative" }}>
+            {/* Container principal */}
+            <Box sx={{ 
+              width: "100%", 
+              height: 400, 
+              position: "relative",
+              overflow: "hidden",
+            }}>
+              {/* Container para o scanner html5-qrcode */}
+              {!useFallback && Html5QrcodeScanner && (
+                <div 
+                  id="scanner-container"
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    position: 'relative',
+                  }}
+                />
+              )}
+              
+              {/* Fallback: Vídeo simples */}
+              {useFallback && (
+                <>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                  />
+                  
+                  {/* Botão para capturar imagem (debug) */}
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={captureImage}
+                    sx={{
+                      position: 'absolute',
+                      bottom: 10,
+                      right: 10,
+                      zIndex: 1000,
+                    }}
+                  >
+                    Capturar
+                  </Button>
+                </>
+              )}
+              
               {/* Overlay com guias */}
               <Box
                 sx={{
@@ -451,7 +432,7 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
                   display: "flex",
                   justifyContent: "center",
                   alignItems: "center",
-                  zIndex: 1000,
+                  zIndex: 100,
                 }}
               >
                 <Paper
@@ -498,21 +479,24 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
                 bottom: 0,
                 left: 0,
                 right: 0,
-                zIndex: 1000,
+                zIndex: 100,
               }}>
                 <Typography variant="body2">
-                  📱 Posicione o QR Code dentro do quadro
+                  {useFallback ? "📷 Câmera ativa - Use um leitor externo" : "📱 Posicione o QR Code dentro do quadro"}
                 </Typography>
               </Box>
             </Box>
+            
+            {/* Canvas oculto para captura */}
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
           </>
         ) : (
           <Box sx={{ p: 3, textAlign: "center" }}>
-            <CameraAlt sx={{ fontSize: 64, color: "#1976d2", mb: 2 }} />
-            <Typography variant="h6" gutterBottom>
-              Permissão da Câmera Necessária
+            <CameraAlt sx={{ fontSize: 64, color: "white", mb: 2 }} />
+            <Typography variant="h6" gutterBottom color="white">
+              Permissão da Câmera
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            <Typography variant="body2" color="rgba(255,255,255,0.8)" sx={{ mb: 3 }}>
               Para escanear QR Codes, precisamos acessar sua câmera.
             </Typography>
             <Button
@@ -520,6 +504,7 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
               startIcon={<CameraAlt />}
               onClick={requestCameraPermission}
               size="large"
+              sx={{ bgcolor: "#1976d2", '&:hover': { bgcolor: "#1565c0" } }}
             >
               Permitir Câmera
             </Button>
@@ -528,17 +513,34 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
       </DialogContent>
 
       <DialogActions sx={{ p: 2, bgcolor: "#f5f5f5", borderTop: "1px solid #e0e0e0" }}>
-        <Button 
-          onClick={handleRetry} 
-          startIcon={<Refresh />}
-          variant="outlined"
-          sx={{ mr: 1 }}
-        >
-          Reiniciar
-        </Button>
-        <Button onClick={handleClose} variant="contained">
-          Fechar
-        </Button>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+          <Box>
+            {cameraReady && (
+              <Button 
+                startIcon={scanningActive ? <VideocamOff /> : <Videocam />}
+                onClick={() => setScanningActive(!scanningActive)}
+                variant="outlined"
+                size="small"
+              >
+                {scanningActive ? 'Pausar' : 'Retomar'}
+              </Button>
+            )}
+          </Box>
+          
+          <Box>
+            <Button 
+              onClick={handleRetry} 
+              startIcon={<Refresh />}
+              variant="outlined"
+              sx={{ mr: 1 }}
+            >
+              Reiniciar
+            </Button>
+            <Button onClick={handleClose} variant="contained">
+              Fechar
+            </Button>
+          </Box>
+        </Box>
       </DialogActions>
     </Dialog>
   );
