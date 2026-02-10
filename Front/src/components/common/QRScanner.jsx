@@ -1,4 +1,4 @@
-// Front/src/components/common/QRScanner.jsx - VERSÃO COM LEITURA DE QR CODE
+// Front/src/components/common/QRScanner.jsx - VERSÃO OTIMIZADA
 import React, { useEffect, useRef, useState } from "react";
 import {
   Dialog,
@@ -16,13 +16,12 @@ import {
 import {
   QrCodeScanner,
   Close,
-  CameraAlt,
   Refresh,
   FlipCameraAndroid,
+  TextFields,
 } from "@mui/icons-material";
-import { BrowserQRCodeReader } from '@zxing/library';
 
-const QRScanner = ({ open, onClose, onScan }) => {
+const QRScanner = ({ open, onClose, onScan, scanning: externalScanning }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [error, setError] = useState("");
@@ -31,8 +30,9 @@ const QRScanner = ({ open, onClose, onScan }) => {
   const [facingMode, setFacingMode] = useState("environment");
   const [showVideo, setShowVideo] = useState(false);
   const [scanningActive, setScanningActive] = useState(true);
-  const codeReaderRef = useRef(null);
+  const [lastScanned, setLastScanned] = useState(null);
   const animationFrameRef = useRef(null);
+  const scanTimeoutRef = useRef(null);
 
   // Iniciar câmera
   const startCamera = async () => {
@@ -40,6 +40,12 @@ const QRScanner = ({ open, onClose, onScan }) => {
       setLoading(true);
       setError("");
       setScanningActive(true);
+      setLastScanned(null);
+      
+      // Limpar timeouts anteriores
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+      }
       
       // Parar stream anterior
       if (stream) {
@@ -53,7 +59,7 @@ const QRScanner = ({ open, onClose, onScan }) => {
         animationFrameRef.current = null;
       }
       
-      console.log("🎬 Iniciando câmera para leitura de QR Code...");
+      console.log("🎬 Iniciando câmera...");
       
       // Solicitar acesso à câmera
       const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -94,103 +100,110 @@ const QRScanner = ({ open, onClose, onScan }) => {
     }
   };
 
-  // Inicializar leitor de QR Code
-  const initQRCodeReader = () => {
-    if (!codeReaderRef.current) {
-      codeReaderRef.current = new BrowserQRCodeReader();
-      console.log("📖 Leitor de QR Code inicializado");
-    }
-  };
-
-  // Função para capturar e analisar o vídeo
-  const captureAndDecode = () => {
+  // Função para capturar e analisar o vídeo usando jsQR
+  const captureAndDecode = async () => {
     if (!videoRef.current || !canvasRef.current || !scanningActive) return;
 
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-
-    // Configurar canvas com mesmo tamanho do vídeo
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-
-    // Desenhar frame do vídeo no canvas
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // Tentar decodificar QR Code usando jsQR (alternativa mais leve)
     try {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      
+      // Só processar se o vídeo estiver pronto
+      if (video.readyState !== 4) {
+        if (scanningActive) {
+          animationFrameRef.current = requestAnimationFrame(captureAndDecode);
+        }
+        return;
+      }
+      
+      // Configurar canvas
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const context = canvas.getContext('2d');
+      
+      // Desenhar frame
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      // Tentar decodificar com jsQR
       const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
       
-      // Usar jsQR para decodificar
-      import('jsqr').then(({ default: jsQR }) => {
-        const code = jsQR(
-          imageData.data,
-          imageData.width,
-          imageData.height,
-          {
-            inversionAttempts: "dontInvert",
-          }
-        );
+      // Importar jsQR dinamicamente
+      const jsQRModule = await import('jsqr');
+      const jsQR = jsQRModule.default;
+      
+      const code = jsQR(
+        imageData.data,
+        imageData.width,
+        imageData.height,
+        {
+          inversionAttempts: "dontInvert",
+        }
+      );
 
-        if (code) {
-          console.log("✅ QR Code detectado:", code.data);
-          
-          // Parar animação
-          if (animationFrameRef.current) {
-            cancelAnimationFrame(animationFrameRef.current);
+      if (code && code.data) {
+        // Evitar processar o mesmo código múltiplas vezes
+        if (lastScanned === code.data) {
+          if (scanningActive) {
+            animationFrameRef.current = requestAnimationFrame(captureAndDecode);
           }
-          
-          // Parar câmera
-          if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-          }
-          
-          setScanningActive(false);
-          
+          return;
+        }
+        
+        setLastScanned(code.data);
+        console.log("✅ QR Code detectado:", code.data.substring(0, 50));
+        
+        // Parar scanning
+        setScanningActive(false);
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+        }
+        
+        // Pequeno delay para mostrar feedback visual
+        setTimeout(() => {
           // Chamar callback com resultado
           if (onScan) {
             onScan(code.data);
           }
           
-          // Fechar scanner
-          if (onClose) {
-            onClose();
-          }
-        } else if (scanningActive) {
-          // Continuar scanning
-          animationFrameRef.current = requestAnimationFrame(captureAndDecode);
-        }
-      }).catch(err => {
-        console.error("Erro ao carregar jsQR:", err);
-        // Continuar mesmo com erro
-        if (scanningActive) {
-          animationFrameRef.current = requestAnimationFrame(captureAndDecode);
-        }
-      });
+          // Não fechar automaticamente - deixar a página pai controlar
+          // if (onClose) {
+          //   onClose();
+          // }
+        }, 500);
+        
+        return;
+      }
+      
+      // Continuar scanning
+      if (scanningActive) {
+        animationFrameRef.current = requestAnimationFrame(captureAndDecode);
+      }
+      
     } catch (err) {
-      console.warn("Erro na decodificação:", err);
+      console.warn("⚠️ Erro na decodificação:", err);
+      // Continuar mesmo com erro
       if (scanningActive) {
         animationFrameRef.current = requestAnimationFrame(captureAndDecode);
       }
     }
   };
 
-  // Configurar o elemento de vídeo quando stream mudar
+  // Configurar vídeo e iniciar scanning
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
-      videoRef.current.play().catch(e => {
-        console.warn("⚠️ Erro ao reproduzir vídeo:", e);
-      });
       
-      // Iniciar leitura quando o vídeo estiver pronto
+      videoRef.current.onloadedmetadata = () => {
+        videoRef.current.play().catch(e => {
+          console.warn("⚠️ Erro ao reproduzir vídeo:", e);
+        });
+      };
+      
       videoRef.current.onplaying = () => {
-        console.log("🎥 Vídeo rodando, iniciando leitura de QR Code...");
-        initQRCodeReader();
-        
-        // Iniciar loop de captura
+        console.log("🎥 Vídeo rodando, iniciando leitura...");
         if (scanningActive) {
-          animationFrameRef.current = requestAnimationFrame(captureAndDecode);
+          // Iniciar loop de captura
+          captureAndDecode();
         }
       };
     }
@@ -204,25 +217,28 @@ const QRScanner = ({ open, onClose, onScan }) => {
     }
   }, [open]);
 
-  // Cleanup quando fechar
+  // Sincronizar com prop externalScanning
+  useEffect(() => {
+    if (externalScanning !== undefined) {
+      setScanningActive(externalScanning);
+    }
+  }, [externalScanning]);
+
+  // Cleanup
   useEffect(() => {
     return () => {
+      console.log("🧹 Limpando recursos do scanner...");
       if (stream) {
-        console.log("🧹 Limpando recursos...");
         stream.getTracks().forEach(track => track.stop());
       }
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+      }
     };
   }, [stream]);
-
-  // Efeito para re-iniciar scanning quando scanningActive mudar
-  useEffect(() => {
-    if (scanningActive && videoRef.current && videoRef.current.readyState >= 2) {
-      animationFrameRef.current = requestAnimationFrame(captureAndDecode);
-    }
-  }, [scanningActive]);
 
   const handleClose = () => {
     setScanningActive(false);
@@ -238,6 +254,7 @@ const QRScanner = ({ open, onClose, onScan }) => {
 
   const handleRetry = () => {
     setError("");
+    setLastScanned(null);
     setScanningActive(true);
     startCamera();
   };
@@ -245,16 +262,18 @@ const QRScanner = ({ open, onClose, onScan }) => {
   const toggleCamera = () => {
     const newMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(newMode);
+    setLastScanned(null);
     setScanningActive(true);
     startCamera();
   };
 
-  // Entrada manual de QR Code
   const handleManualInput = () => {
     const qrCode = prompt("Digite ou cole o código do QR Code:");
-    if (qrCode && qrCode.trim() && onScan) {
+    if (qrCode && qrCode.trim()) {
       setScanningActive(false);
-      onScan(qrCode.trim());
+      if (onScan) {
+        onScan(qrCode.trim());
+      }
     }
   };
 
@@ -436,6 +455,34 @@ const QRScanner = ({ open, onClose, onScan }) => {
                       }}
                     />
                   )}
+                  
+                  {/* Feedback de sucesso */}
+                  {!scanningActive && lastScanned && (
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: 'rgba(0, 150, 0, 0.3)',
+                      }}
+                    >
+                      <Typography 
+                        variant="h6" 
+                        sx={{ 
+                          color: 'white', 
+                          fontWeight: 'bold',
+                          textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
+                        }}
+                      >
+                        ✅ CÓDIGO LIDO!
+                      </Typography>
+                    </Box>
+                  )}
                 </Paper>
               </Box>
               
@@ -455,7 +502,7 @@ const QRScanner = ({ open, onClose, onScan }) => {
                 <Typography variant="caption" sx={{ fontSize: '0.8rem' }}>
                   {scanningActive 
                     ? '📱 Posicione o QR Code dentro do quadro' 
-                    : '✅ QR Code detectado!'}
+                    : '✅ QR Code detectado! Processando...'}
                 </Typography>
               </Box>
             </>
@@ -469,7 +516,7 @@ const QRScanner = ({ open, onClose, onScan }) => {
               gap: 2,
               p: 3,
             }}>
-              <CameraAlt sx={{ fontSize: 64, color: 'white' }} />
+              <QrCodeScanner sx={{ fontSize: 64, color: 'white' }} />
               <Typography color="white" variant="h6" textAlign="center">
                 Câmera não disponível
               </Typography>
@@ -533,10 +580,11 @@ const QRScanner = ({ open, onClose, onScan }) => {
         }}>
           <Button
             onClick={handleManualInput}
+            startIcon={<TextFields />}
             variant="outlined"
             size="small"
           >
-            Digitar Código Manualmente
+            Digitar Código
           </Button>
           
           <Button
