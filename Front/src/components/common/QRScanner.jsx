@@ -43,13 +43,14 @@ const QRScanner = ({ open, onClose, onScan, autoStart = true, scanning = true })
       }
 
       // Configura novo scanner
+      // CORREÇÃO: Substituído Html5QrcodeScanType.SCAN_TYPE_CAMERA por valor numérico
       const html5QrcodeScanner = new Html5QrcodeScanner(
         "qr-reader",
         {
           fps: 10,
           qrbox: { width: 250, height: 250 },
           rememberLastUsedCamera: true,
-          supportedScanTypes: [Html5QrcodeScanType.SCAN_TYPE_CAMERA],
+          supportedScanTypes: [2], // CORREÇÃO: SCAN_TYPE_CAMERA = 2
         },
         false
       );
