@@ -1,4 +1,4 @@
-// src/components/common/QRImageModal.jsx
+// src/components/common/QRImageModal.jsx - VERSÃO CORRIGIDA
 import React, { useState, useEffect } from 'react';
 import {
   Dialog,
@@ -43,33 +43,32 @@ const QRImageModal = ({
   const [qrImage, setQrImage] = useState('');
   const [error, setError] = useState('');
   const [size, setSize] = useState(300);
-  const [manualQR, setManualQR] = useState('');
+  const [qrUrl, setQrUrl] = useState('');
 
   // Gerar QR Code quando o modal abrir
   useEffect(() => {
     if (open && room) {
       generateQRCode();
-      setManualQR(room.qrCode || '');
     }
   }, [open, room]);
 
+  // ======================================================================
+  // ✅ FUNÇÃO CORRIGIDA - GERA QR CODE COM URL (NÃO JSON!)
+  // ======================================================================
   const generateQRCode = async () => {
     try {
       setLoading(true);
       setError('');
       
-      const qrData = {
-        type: 'ROOM',
-        roomId: room.id,
-        roomName: room.name,
-        roomType: room.type,
-        location: room.location,
-        qrCode: room.qrCode || `QR-${room.type}-${room.name}`,
-        timestamp: Date.now(),
-        system: 'Neuropsicocentro Cleaning System'
-      };
-
-      const qrImage = await QRCode.toDataURL(JSON.stringify(qrData), {
+      // ✅ URL CORRETA que vai no QR Code
+      const baseUrl = process.env.REACT_APP_FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
+      const qrCodeValue = room.qrCode || `QR-${room.type}-${room.name}-${Date.now()}`;
+      const qrContent = `${baseUrl}/scan?roomId=${room.id}&qr=${encodeURIComponent(qrCodeValue)}`;
+      
+      console.log('✅ URL do QR Code:', qrContent);
+      
+      // ✅ Gerar QR Code com a URL, NÃO com JSON!
+      const qrImage = await QRCode.toDataURL(qrContent, {
         errorCorrectionLevel: 'H',
         margin: 2,
         width: size,
@@ -80,6 +79,9 @@ const QRImageModal = ({
       });
 
       setQrImage(qrImage);
+      setQrUrl(qrContent); // ✅ Salvar a URL completa
+      
+      enqueueSnackbar('QR Code gerado com sucesso!', { variant: 'success' });
     } catch (err) {
       setError('Erro ao gerar QR Code: ' + err.message);
       console.error('Erro ao gerar QR Code:', err);
@@ -105,6 +107,9 @@ const QRImageModal = ({
     }
   };
 
+  // ======================================================================
+  // ✅ FUNÇÃO CORRIGIDA - IMPRESSÃO COM URL CORRETA
+  // ======================================================================
   const handlePrint = () => {
     if (!qrImage) return;
 
@@ -145,14 +150,15 @@ const QRImageModal = ({
               margin: 20px auto;
               display: block;
             }
-            .qr-code-text {
+            .qr-url {
               font-family: monospace;
-              font-size: 16px;
+              font-size: 12px;
               background: #f5f5f5;
               padding: 10px;
               border-radius: 5px;
               margin: 20px 0;
               word-break: break-all;
+              color: #1976d2;
             }
             .instructions {
               font-size: 12px;
@@ -160,6 +166,9 @@ const QRImageModal = ({
               margin-top: 20px;
               border-top: 1px solid #eee;
               padding-top: 10px;
+            }
+            @media print {
+              .no-print { display: none; }
             }
           </style>
         </head>
@@ -172,21 +181,28 @@ const QRImageModal = ({
             
             <img src="${qrImage}" alt="QR Code" class="qr-image" />
             
-            <div class="qr-code-text">
-              ${room.qrCode || 'QR CODE NÃO GERADO'}
+            <div class="qr-url">
+              ${qrUrl}
             </div>
             
             <div class="instructions">
-              Escaneie este código com o aplicativo para iniciar a limpeza<br>
+              📱 ESCANEIE ESTE QR CODE PARA INICIAR A LIMPEZA<br>
               Sistema Neuropsicocentro • ${new Date().toLocaleDateString('pt-BR')}
             </div>
           </div>
-          <script>
-            setTimeout(() => {
-              window.print();
-              setTimeout(() => window.close(), 1000);
-            }, 500);
-          </script>
+          <div class="no-print" style="margin-top: 30px;">
+            <button onclick="window.print();" style="
+              padding: 10px 20px;
+              background: #1976d2;
+              color: white;
+              border: none;
+              border-radius: 5px;
+              cursor: pointer;
+              font-size: 16px;
+            ">
+              🖨️ Imprimir QR Code
+            </button>
+          </div>
         </body>
       </html>
     `);
@@ -194,8 +210,9 @@ const QRImageModal = ({
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(room.qrCode || '')
-      .then(() => enqueueSnackbar('QR Code copiado!', { variant: 'success' }))
+    // ✅ Copiar a URL, não o código
+    navigator.clipboard.writeText(qrUrl || '')
+      .then(() => enqueueSnackbar('URL copiada!', { variant: 'success' }))
       .catch(() => enqueueSnackbar('Erro ao copiar', { variant: 'error' }));
   };
 
@@ -219,7 +236,7 @@ const QRImageModal = ({
 
       <DialogContent>
         {room && (
-          <Paper sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+          <Paper sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: '#f5f5f5' }}>
             <Stack direction="row" spacing={2} alignItems="center">
               <Room sx={{ color: '#1976d2' }} />
               <Box sx={{ flex: 1 }}>
@@ -237,7 +254,7 @@ const QRImageModal = ({
         )}
 
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
             {error}
           </Alert>
         )}
@@ -265,28 +282,34 @@ const QRImageModal = ({
               
               <TextField
                 fullWidth
-                label="Código QR"
-                value={manualQR}
-                onChange={(e) => setManualQR(e.target.value)}
+                label="URL do QR Code (escaneie esta URL)"
+                value={qrUrl || ''}
+                onChange={(e) => setQrUrl(e.target.value)}
                 sx={{ mt: 3 }}
                 InputProps={{
+                  readOnly: true,
                   endAdornment: (
-                    <IconButton onClick={handleCopy} size="small">
+                    <IconButton onClick={handleCopy} size="small" color="primary">
                       <ContentCopy />
                     </IconButton>
                   ),
                 }}
+                variant="outlined"
+                size="small"
               />
               
-              <Alert severity="info" sx={{ mt: 2 }}>
-                Este QR Code contém todas as informações da sala para escaneamento rápido.
+              <Alert severity="success" sx={{ mt: 2, textAlign: 'left' }}>
+                <strong>✅ QR Code gerado com URL!</strong>
+                <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                  Escaneie este QR Code para abrir diretamente a página da sala.
+                </Typography>
               </Alert>
             </>
           ) : (
             <Box sx={{ py: 4 }}>
               <QrCode sx={{ fontSize: 80, color: '#ccc', mb: 2 }} />
               <Typography color="text.secondary">
-                Não foi possível gerar o QR Code
+                Clique em "Regenerar" para gerar o QR Code
               </Typography>
             </Box>
           )}
@@ -301,6 +324,7 @@ const QRImageModal = ({
               size="small" 
               variant={size === 200 ? "contained" : "outlined"}
               onClick={() => setSize(200)}
+              disabled={loading}
             >
               Pequeno
             </Button>
@@ -308,6 +332,7 @@ const QRImageModal = ({
               size="small" 
               variant={size === 300 ? "contained" : "outlined"}
               onClick={() => setSize(300)}
+              disabled={loading}
             >
               Médio
             </Button>
@@ -315,6 +340,7 @@ const QRImageModal = ({
               size="small" 
               variant={size === 400 ? "contained" : "outlined"}
               onClick={() => setSize(400)}
+              disabled={loading}
             >
               Grande
             </Button>
@@ -331,8 +357,9 @@ const QRImageModal = ({
           startIcon={<Refresh />}
           onClick={handleRegenerate}
           disabled={loading}
+          variant="outlined"
         >
-          Regenerar
+          {loading ? 'Gerando...' : 'Regenerar'}
         </Button>
         
         {qrImage && (
@@ -342,7 +369,7 @@ const QRImageModal = ({
               onClick={handleCopy}
               variant="outlined"
             >
-              Copiar
+              Copiar URL
             </Button>
             
             <Button
