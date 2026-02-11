@@ -254,7 +254,6 @@ const userController = {
       const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0,0,0,0);
       const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30); monthAgo.setHours(0,0,0,0);
 
-      // ✅ APENAS STATUS 'COMPLETED' - QUE EXISTE NO ENUM!
       const [total, todayCount, weekCount, monthCount] = await Promise.all([
         prisma.cleaningRecord.count({ 
           where: { cleanerId: id, status: 'COMPLETED' } 
@@ -282,7 +281,6 @@ const userController = {
         })
       ]);
 
-      // ✅ Cálculo do tempo médio
       const records = await prisma.cleaningRecord.findMany({
         where: {
           cleanerId: id,
@@ -331,7 +329,7 @@ const userController = {
   },
 
   // =========================================================
-  // ✅ GET /api/users/:id/login-history - COMPLETAMENTE CORRIGIDO
+  // ✅ GET /api/users/:id/login-history - CORRIGIDO (not: null)
   // =========================================================
   getUserLoginHistory: async (req, res) => {
     try {
@@ -351,11 +349,11 @@ const userController = {
         return res.status(404).json({ success: false, message: 'Usuário não encontrado' });
       }
 
-      // ✅ CORRIGIDO: APENAS UM orderBy!
+      // ✅ CORRIGIDO: not: null (NÃO DateTime!)
       const cleaningHistory = await prisma.cleaningRecord.findMany({
         where: { 
           cleanerId: id, 
-          startedAt: { not: null } 
+          startedAt: { not: null }
         },
         orderBy: { startedAt: 'desc' },
         select: {
@@ -402,7 +400,7 @@ const userController = {
   },
 
   // =========================================================
-  // ✅ GET /api/users/:id/performance - MANTIDO
+  // ✅ GET /api/users/:id/performance
   // =========================================================
   getWorkerPerformance: async (req, res) => {
     try {
