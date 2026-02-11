@@ -239,7 +239,7 @@ const userController = {
   },
 
   // =========================================================
-  // ✅ GET /api/users/:id/stats - COMPLETAMENTE CORRIGIDO
+  // ✅ GET /api/users/:id/stats - COMPLETAMENTE CORRIGIDO!
   // =========================================================
   getWorkerStats: async (req, res) => {
     try {
@@ -281,6 +281,7 @@ const userController = {
         })
       ]);
 
+      // ✅ CORRIGIDO: not: null (NÃO DateTime!)
       const records = await prisma.cleaningRecord.findMany({
         where: {
           cleanerId: id,
@@ -329,7 +330,7 @@ const userController = {
   },
 
   // =========================================================
-  // ✅ GET /api/users/:id/login-history - FINALMENTE CORRIGIDO!
+  // ✅ GET /api/users/:id/login-history - CORRIGIDO!
   // =========================================================
   getUserLoginHistory: async (req, res) => {
     try {
@@ -349,7 +350,7 @@ const userController = {
         return res.status(404).json({ success: false, message: 'Usuário não encontrado' });
       }
 
-      // ✅ CORRETO: APENAS include, SEM select!
+      // ✅ CORRIGIDO: APENAS include, SEM select!
       const cleaningHistory = await prisma.cleaningRecord.findMany({
         where: { 
           cleanerId: id, 
