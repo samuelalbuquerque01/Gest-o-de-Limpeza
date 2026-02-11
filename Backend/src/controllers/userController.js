@@ -329,7 +329,7 @@ const userController = {
   },
 
   // =========================================================
-  // ✅ GET /api/users/:id/login-history - CORRIGIDO COM INCLUDE!
+  // ✅ GET /api/users/:id/login-history - FINALMENTE CORRIGIDO!
   // =========================================================
   getUserLoginHistory: async (req, res) => {
     try {
@@ -349,7 +349,7 @@ const userController = {
         return res.status(404).json({ success: false, message: 'Usuário não encontrado' });
       }
 
-      // ✅ CORRIGIDO: usando INCLUDE em vez de SELECT aninhado!
+      // ✅ CORRETO: APENAS include, SEM select!
       const cleaningHistory = await prisma.cleaningRecord.findMany({
         where: { 
           cleanerId: id, 
@@ -363,12 +363,6 @@ const userController = {
               location: true
             }
           }
-        },
-        select: {
-          id: true,
-          startedAt: true,
-          completedAt: true,
-          status: true
         },
         take: 20
       });
