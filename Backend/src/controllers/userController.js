@@ -1,4 +1,4 @@
-// Backend/src/controllers/userController.js - CÓDIGO COMPLETO
+// Backend/src/controllers/userController.js - VERSÃO COMPLETA
 const bcrypt = require('bcryptjs');
 const prisma = require('../utils/database');
 
@@ -15,6 +15,8 @@ function safeUser(u) {
     status: u.status,
     createdAt: u.createdAt,
     updatedAt: u.updatedAt,
+    lastLogin: u.lastLogin || null,
+    phone: u.phone || null
   };
 }
 
@@ -31,8 +33,7 @@ async function hashIfProvided(password) {
 
 const userController = {
   // =========================================================
-  // ✅ Rotas NOVAS (compatíveis com o FRONT)
-  // base: /api/users
+  // ✅ ROTAS PRINCIPAIS - /api/users
   // =========================================================
 
   // GET /api/users
@@ -57,7 +58,7 @@ const userController = {
   // POST /api/users
   createUser: async (req, res) => {
     try {
-      const { name, email, password, role, status } = req.body;
+      const { name, email, password, role, status, phone } = req.body;
 
       if (!name || !email || !password) {
         return res.status(400).json({
@@ -92,6 +93,7 @@ const userController = {
           password: hash,
           role: finalRole,
           status: finalStatus,
+          phone: phone || null,
         },
       });
 
@@ -103,17 +105,17 @@ const userController = {
   },
 
   // PUT /api/users/:id
-  // ✅ agora aceita password também
   updateUser: async (req, res) => {
     try {
       const { id } = req.params;
-      const { name, email, role, status, password } = req.body;
+      const { name, email, role, status, password, phone } = req.body;
 
       const data = {};
       if (name !== undefined) data.name = String(name).trim();
       if (email !== undefined) data.email = normalizeEmail(email);
       if (role !== undefined) data.role = String(role).toUpperCase();
       if (status !== undefined) data.status = String(status).toUpperCase();
+      if (phone !== undefined) data.phone = phone || null;
 
       if (password) {
         data.password = await hashIfProvided(password);
@@ -148,7 +150,7 @@ const userController = {
     }
   },
 
-  // DELETE /api/users/:id - ✅ CORRIGIDO COMPLETAMENTE
+  // DELETE /api/users/:id
   deleteUser: async (req, res) => {
     try {
       const { id } = req.params;
@@ -157,14 +159,12 @@ const userController = {
         return res.status(400).json({ success: false, message: 'Você não pode excluir a si mesmo' });
       }
 
-      // ✅ PRIMEIRO deletar os registros de limpeza associados
-      console.log(`🗑️  Deletando registros de limpeza do usuário ${id}`);
+      console.log(`🗑️ Deletando registros de limpeza do usuário ${id}`);
       await prisma.cleaningRecord.deleteMany({
         where: { cleanerId: id }
       });
 
-      // ✅ DEPOIS deletar o usuário
-      console.log(`🗑️  Deletando usuário ${id}`);
+      console.log(`🗑️ Deletando usuário ${id}`);
       await prisma.user.delete({ where: { id } });
       
       console.log(`✅ Usuário ${id} removido com sucesso`);
@@ -239,8 +239,340 @@ const userController = {
   },
 
   // =========================================================
-  // ✅ Rotas LEGADAS (mantidas)
-  // base: /api/users/workers
+  // ✅ NOVOS ENDPOINTS - ESTATÍSTICAS DO FUNCIONÁRIO
+  // =========================================================
+
+  // GET /api/users/:id/stats
+  getWorkerStats: async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Verificar se usuário existe
+      const user = await prisma.user.findUnique({
+        where: { id },
+        select: { id: true, role: true }
+      });
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'Usuário não encontrado'
+        });
+      }
+
+      // Data de hoje (início do dia)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // Data de 7 dias atrás
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      weekAgo.setHours(0, 0, 0, 0);
+      
+      // Data de 30 dias atrás
+      const monthAgo = new Date();
+      monthAgo.setDate(monthAgo.getDate() - 30);
+      monthAgo.setHours(0, 0, 0, 0);
+
+      // Buscar estatísticas
+      const [
+        totalCleanings,
+        todayCleanings,
+        weekCleanings,
+        monthCleanings,
+        pendingCleanings,
+        inProgressCleanings
+      ] = await Promise.all([
+        // Total de limpezas concluídas
+        prisma.cleaningRecord.count({
+          where: {
+            cleanerId: id,
+            status: 'COMPLETED'
+          }
+        }),
+        
+        // Limpezas hoje
+        prisma.cleaningRecord.count({
+          where: {
+            cleanerId: id,
+            status: 'COMPLETED',
+            completedAt: { gte: today }
+          }
+        }),
+        
+        // Limpezas na última semana
+        prisma.cleaningRecord.count({
+          where: {
+            cleanerId: id,
+            status: 'COMPLETED',
+            completedAt: { gte: weekAgo }
+          }
+        }),
+        
+        // Limpezas no último mês
+        prisma.cleaningRecord.count({
+          where: {
+            cleanerId: id,
+            status: 'COMPLETED',
+            completedAt: { gte: monthAgo }
+          }
+        }),
+        
+        // Limpezas pendentes
+        prisma.cleaningRecord.count({
+          where: {
+            cleanerId: id,
+            status: 'PENDING'
+          }
+        }),
+        
+        // Limpezas em andamento
+        prisma.cleaningRecord.count({
+          where: {
+            cleanerId: id,
+            status: 'IN_PROGRESS'
+          }
+        })
+      ]);
+
+      // Calcular tempo médio
+      const records = await prisma.cleaningRecord.findMany({
+        where: {
+          cleanerId: id,
+          status: 'COMPLETED',
+          startedAt: { not: null },
+          completedAt: { not: null }
+        },
+        select: {
+          startedAt: true,
+          completedAt: true
+        },
+        take: 100
+      });
+      
+      let avgDuration = 0;
+      if (records.length > 0) {
+        const totalMinutes = records.reduce((sum, r) => {
+          const diff = new Date(r.completedAt) - new Date(r.startedAt);
+          return sum + (diff / (1000 * 60));
+        }, 0);
+        avgDuration = Math.round(totalMinutes / records.length);
+      }
+
+      // Última limpeza
+      const lastCleaning = await prisma.cleaningRecord.findFirst({
+        where: {
+          cleanerId: id,
+          status: 'COMPLETED'
+        },
+        orderBy: { completedAt: 'desc' },
+        select: {
+          completedAt: true,
+          room: {
+            select: { name: true, type: true }
+          }
+        }
+      });
+
+      return res.json({
+        success: true,
+        total: totalCleanings,
+        today: todayCleanings,
+        week: weekCleanings,
+        month: monthCleanings,
+        pending: pendingCleanings,
+        inProgress: inProgressCleanings,
+        averageTime: avgDuration,
+        lastCleaning: lastCleaning ? {
+          date: lastCleaning.completedAt,
+          room: lastCleaning.room.name,
+          type: lastCleaning.room.type
+        } : null
+      });
+      
+    } catch (error) {
+      console.error('🔥 Erro ao buscar estatísticas do funcionário:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Erro ao buscar estatísticas',
+        error: error.message 
+      });
+    }
+  },
+
+  // GET /api/users/:id/login-history
+  getUserLoginHistory: async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Verificar se usuário existe
+      const user = await prisma.user.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          lastLogin: true,
+          createdAt: true,
+          updatedAt: true
+        }
+      });
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'Usuário não encontrado'
+        });
+      }
+
+      // Buscar histórico de limpezas como atividade
+      const cleaningHistory = await prisma.cleaningRecord.findMany({
+        where: {
+          cleanerId: id,
+          startedAt: { not: null }
+        },
+        orderBy: { startedAt: 'desc' },
+        select: {
+          id: true,
+          startedAt: true,
+          completedAt: true,
+          status: true,
+          room: {
+            select: { name: true, type: true, location: true }
+          }
+        },
+        take: 20
+      });
+
+      // Calcular estatísticas de login
+      // Se você tiver uma tabela de sessões, use ela
+      // Por enquanto, usamos dados do usuário
+      const loginStats = {
+        lastLogin: user.lastLogin,
+        firstLogin: user.createdAt,
+        totalLogins: user.lastLogin ? 1 : 0, // Simplificado
+        lastLoginDaysAgo: user.lastLogin 
+          ? Math.floor((new Date() - new Date(user.lastLogin)) / (1000 * 60 * 60 * 24))
+          : null
+      };
+
+      return res.json({
+        success: true,
+        ...loginStats,
+        activities: cleaningHistory.map(c => ({
+          id: c.id,
+          type: 'cleaning',
+          timestamp: c.startedAt,
+          completedAt: c.completedAt,
+          status: c.status,
+          room: c.room.name,
+          location: c.room.location,
+          duration: c.startedAt && c.completedAt 
+            ? Math.round((new Date(c.completedAt) - new Date(c.startedAt)) / (1000 * 60))
+            : null
+        })),
+        activityCount: cleaningHistory.length
+      });
+      
+    } catch (error) {
+      console.error('🔥 Erro ao buscar histórico de login:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Erro ao buscar histórico de login',
+        error: error.message 
+      });
+    }
+  },
+
+  // GET /api/users/:id/performance
+  getWorkerPerformance: async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Performance por dia da semana
+      const performance = await prisma.$queryRaw`
+        SELECT 
+          EXTRACT(DOW FROM "completedAt") as day_of_week,
+          COUNT(*) as total,
+          AVG(EXTRACT(EPOCH FROM ("completedAt" - "startedAt")) / 60) as avg_duration
+        FROM "CleaningRecord"
+        WHERE "cleanerId" = ${id}
+          AND "status" = 'COMPLETED'
+          AND "completedAt" IS NOT NULL
+          AND "startedAt" IS NOT NULL
+        GROUP BY EXTRACT(DOW FROM "completedAt")
+        ORDER BY day_of_week
+      `;
+
+      // Performance por hora do dia
+      const hourlyPerformance = await prisma.$queryRaw`
+        SELECT 
+          EXTRACT(HOUR FROM "startedAt") as hour,
+          COUNT(*) as total,
+          AVG(EXTRACT(EPOCH FROM ("completedAt" - "startedAt")) / 60) as avg_duration
+        FROM "CleaningRecord"
+        WHERE "cleanerId" = ${id}
+          AND "status" = 'COMPLETED'
+          AND "startedAt" IS NOT NULL
+          AND "completedAt" IS NOT NULL
+        GROUP BY EXTRACT(HOUR FROM "startedAt")
+        ORDER BY hour
+      `;
+
+      // Performance por tipo de sala
+      const roomTypePerformance = await prisma.cleaningRecord.groupBy({
+        by: ['roomId'],
+        where: {
+          cleanerId: id,
+          status: 'COMPLETED'
+        },
+        _count: { id: true },
+        _avg: {
+          completedAt: true,
+          startedAt: true
+        }
+      });
+
+      // Buscar nomes das salas
+      const roomIds = roomTypePerformance.map(r => r.roomId);
+      const rooms = await prisma.room.findMany({
+        where: { id: { in: roomIds } },
+        select: { id: true, name: true, type: true }
+      });
+
+      const roomPerformance = roomTypePerformance.map(r => {
+        const room = rooms.find(rm => rm.id === r.roomId);
+        return {
+          roomId: r.roomId,
+          roomName: room?.name || 'Desconhecida',
+          roomType: room?.type || 'DESCONHECIDO',
+          total: r._count.id,
+          avgDuration: r._avg.completedAt && r._avg.startedAt
+            ? Math.round((new Date(r._avg.completedAt) - new Date(r._avg.startedAt)) / (1000 * 60))
+            : 0
+        };
+      });
+
+      return res.json({
+        success: true,
+        byDayOfWeek: performance,
+        byHour: hourlyPerformance,
+        byRoomType: roomPerformance,
+        totalRooms: roomPerformance.length
+      });
+      
+    } catch (error) {
+      console.error('🔥 Erro ao buscar performance:', error);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Erro ao buscar performance',
+        error: error.message 
+      });
+    }
+  },
+
+  // =========================================================
+  // ✅ ROTAS LEGADAS - /api/users/workers
   // =========================================================
 
   // GET /api/users/workers
@@ -261,7 +593,7 @@ const userController = {
   // POST /api/users/workers
   createWorker: async (req, res) => {
     try {
-      const { name, email, password } = req.body;
+      const { name, email, password, phone } = req.body;
 
       if (!name || !email || !password) {
         return res.status(400).json({
@@ -286,6 +618,7 @@ const userController = {
           password: hash,
           role: 'CLEANER',
           status: 'ACTIVE',
+          phone: phone || null,
         },
       });
 
@@ -297,15 +630,15 @@ const userController = {
   },
 
   // PUT /api/users/workers/:id
-  // ✅ agora aceita password também
   updateWorker: async (req, res) => {
     try {
       const { id } = req.params;
-      const { name, email, password } = req.body;
+      const { name, email, password, phone } = req.body;
 
       const data = {};
       if (name !== undefined) data.name = String(name).trim();
       if (email !== undefined) data.email = normalizeEmail(email);
+      if (phone !== undefined) data.phone = phone || null;
 
       if (password) {
         data.password = await hashIfProvided(password);

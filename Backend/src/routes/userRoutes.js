@@ -30,6 +30,19 @@ router.post('/:id/reset-password', authMiddleware, requireAdmin, userController.
 router.get('/stats', authMiddleware, requireAdmin, userController.getStats);
 
 // =========================================================
+// ✅ 🚨 NOVAS ROTAS - ESTATÍSTICAS DOS FUNCIONÁRIOS
+// =========================================================
+
+// GET /api/users/:id/stats - Estatísticas de limpeza do funcionário
+router.get('/:id/stats', authMiddleware, requireAdmin, userController.getWorkerStats);
+
+// GET /api/users/:id/login-history - Histórico de login do funcionário
+router.get('/:id/login-history', authMiddleware, requireAdmin, userController.getUserLoginHistory);
+
+// GET /api/users/:id/performance - Performance detalhada do funcionário
+router.get('/:id/performance', authMiddleware, requireAdmin, userController.getWorkerPerformance);
+
+// =========================================================
 // ✅ Rotas legadas (mantidas pra compatibilidade)
 // base: /api/users/workers
 // =========================================================

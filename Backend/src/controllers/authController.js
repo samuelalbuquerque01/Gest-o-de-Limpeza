@@ -1,12 +1,10 @@
-// src/controllers/authController.js
+// Backend/src/controllers/authController.js - VERSÃO COMPLETA
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const prisma = require("../utils/database"); // ajuste se seu path for diferente
+const prisma = require("../utils/database");
+
 const config = (() => {
   try {
-    // se você tiver config/index.js ou config.js
-    // senão, isso não quebra
-    // eslint-disable-next-line global-require
     return require("../../config");
   } catch {
     return {};
@@ -34,6 +32,8 @@ function publicUser(user) {
     status: user.status,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
+    lastLogin: user.lastLogin || null,
+    phone: user.phone || null
   };
 }
 
@@ -71,8 +71,6 @@ async function validateLogin(loginEmail, password) {
 const authController = {
   // =========================================================
   // ✅ ADMIN LOGIN
-  // POST /api/auth/login
-  // body: { email, password }
   // =========================================================
   loginAdmin: async (req, res) => {
     try {
@@ -83,26 +81,28 @@ const authController = {
       const result = await validateLogin(email, password);
 
       if (result.badRequest) {
-        console.log("❌ ADMIN: campos obrigatórios faltando");
         return res.status(400).json({ success: false, message: result.message });
       }
 
       if (result.unauthorized) {
-        console.log("❌ ADMIN: credenciais inválidas");
         return res.status(401).json({ success: false, message: result.message });
       }
 
       const user = result.user;
 
       if (user.role !== "ADMIN") {
-        console.log(`❌ ADMIN: sem permissão (${user.email} - ${user.role})`);
         return res.status(403).json({ success: false, message: "Sem permissão de administrador" });
       }
 
       if (user.status && user.status !== "ACTIVE") {
-        console.log(`❌ ADMIN: usuário inativo (${user.email})`);
         return res.status(403).json({ success: false, message: "Usuário inativo" });
       }
+
+      // ✅ ATUALIZAR ÚLTIMO LOGIN
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLogin: new Date() }
+      });
 
       const token = signToken(user);
 
@@ -122,8 +122,6 @@ const authController = {
 
   // =========================================================
   // ✅ WORKER LOGIN
-  // POST /api/auth/worker/login
-  // body pode ser: { email, password } OU { identifier, password }
   // =========================================================
   loginWorker: async (req, res) => {
     try {
@@ -135,27 +133,28 @@ const authController = {
       const result = await validateLogin(loginEmail, password);
 
       if (result.badRequest) {
-        console.log("❌ WORKER: campos obrigatórios faltando");
         return res.status(400).json({ success: false, message: result.message });
       }
 
       if (result.unauthorized) {
-        console.log("❌ WORKER: credenciais inválidas");
         return res.status(401).json({ success: false, message: result.message });
       }
 
       const user = result.user;
 
-      // ✅ funcionário pode ser CLEANER ou SUPERVISOR (ajuste se quiser)
       if (!["CLEANER", "SUPERVISOR"].includes(user.role)) {
-        console.log(`❌ WORKER: sem permissão (${user.email} - ${user.role})`);
         return res.status(403).json({ success: false, message: "Usuário não é funcionário" });
       }
 
       if (user.status !== "ACTIVE") {
-        console.log(`❌ WORKER: funcionário inativo (${user.email})`);
         return res.status(403).json({ success: false, message: "Funcionário inativo" });
       }
+
+      // ✅ ATUALIZAR ÚLTIMO LOGIN
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLogin: new Date() }
+      });
 
       const token = signToken(user);
 
@@ -175,8 +174,6 @@ const authController = {
 
   // =========================================================
   // ✅ ME (perfil)
-  // GET /api/auth/me
-  // header: Authorization: Bearer <token>
   // =========================================================
   me: async (req, res) => {
     try {
@@ -203,6 +200,72 @@ const authController = {
       return res.status(401).json({ success: false, message: "Token inválido ou expirado" });
     }
   },
+
+  // =========================================================
+  // ✅ NOVO ENDPOINT - HISTÓRICO DE LOGIN DO USUÁRIO ATUAL
+  // =========================================================
+  getMyLoginHistory: async (req, res) => {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ success: false, message: "Usuário não autenticado" });
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          lastLogin: true,
+          createdAt: true
+        }
+      });
+
+      // Buscar histórico de limpezas como atividades
+      const activities = await prisma.cleaningRecord.findMany({
+        where: {
+          cleanerId: userId,
+          startedAt: { not: null }
+        },
+        orderBy: { startedAt: 'desc' },
+        select: {
+          id: true,
+          startedAt: true,
+          completedAt: true,
+          status: true,
+          room: {
+            select: { name: true, location: true }
+          }
+        },
+        take: 50
+      });
+
+      return res.json({
+        success: true,
+        lastLogin: user.lastLogin,
+        firstLogin: user.createdAt,
+        activities: activities.map(a => ({
+          id: a.id,
+          type: 'cleaning',
+          timestamp: a.startedAt,
+          completedAt: a.completedAt,
+          status: a.status,
+          room: a.room.name,
+          location: a.room.location
+        })),
+        activityCount: activities.length
+      });
+
+    } catch (error) {
+      console.error("🔥 Erro ao buscar histórico de login:", error);
+      return res.status(500).json({ 
+        success: false, 
+        message: "Erro ao buscar histórico" 
+      });
+    }
+  }
 };
 
 module.exports = authController;

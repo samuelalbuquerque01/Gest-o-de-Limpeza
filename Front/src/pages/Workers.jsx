@@ -43,6 +43,8 @@ import {
   CheckCircle,
   PendingActions,
   LockReset,
+  Login as LoginIcon,
+  CleaningServices,
 } from '@mui/icons-material';
 import { useAuth } from '../contexts/AuthContext';
 import userService from '../services/userService';
@@ -57,6 +59,7 @@ const Workers = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [workerStats, setWorkerStats] = useState({});
 
   const [newWorker, setNewWorker] = useState({
     name: '',
@@ -73,15 +76,78 @@ const Workers = () => {
     }
   }, [user]);
 
+  // ======================================================================
+  // ✅ FUNÇÃO CORRIGIDA - Busca funcionários + estatísticas REAIS
+  // ======================================================================
   const fetchWorkers = async () => {
     try {
       setLoading(true);
       setError('');
 
+      // ✅ 1. Buscar TODOS os usuários
       const response = await userService.getUsers();
       
       if (response.success) {
-        setWorkers(response.data || []);
+        const allUsers = response.data || [];
+        
+        // ✅ 2. Para cada funcionário, buscar estatísticas reais
+        const workersWithStats = await Promise.all(
+          allUsers.map(async (worker) => {
+            try {
+              // ✅ CORRIGIDO: userService.getWorkerStats (NÃO cleaningService)
+              const statsResponse = await userService.getWorkerStats(worker.id);
+              const loginHistory = await userService.getUserLoginHistory(worker.id);
+              
+              return {
+                ...worker,
+                stats: {
+                  totalCleanings: statsResponse?.total || 0,
+                  todayCleanings: statsResponse?.today || 0,
+                  weekCleanings: statsResponse?.week || 0,
+                  monthCleanings: statsResponse?.month || 0,
+                  averageTime: statsResponse?.averageTime || 0,
+                  lastCleaning: statsResponse?.lastCleaning || null,
+                },
+                lastLogin: loginHistory?.lastLogin || null,
+                firstLogin: loginHistory?.firstLogin || worker.createdAt,
+                loginCount: loginHistory?.count || 0,
+                activities: loginHistory?.activities || []
+              };
+            } catch (err) {
+              console.error(`Erro ao buscar dados do funcionário ${worker.id}:`, err);
+              // Se falhar, retorna com dados básicos
+              return {
+                ...worker,
+                stats: { 
+                  totalCleanings: 0, 
+                  todayCleanings: 0,
+                  averageTime: 0 
+                },
+                lastLogin: null,
+                loginCount: 0,
+              };
+            }
+          })
+        );
+
+        setWorkers(workersWithStats);
+        
+        // ✅ 3. Calcular estatísticas gerais
+        const stats = {
+          total: workersWithStats.length,
+          active: workersWithStats.filter(w => w.status === 'ACTIVE').length,
+          inactive: workersWithStats.filter(w => w.status === 'INACTIVE').length,
+          cleaners: workersWithStats.filter(w => w.role === 'CLEANER').length,
+          supervisors: workersWithStats.filter(w => w.role === 'SUPERVISOR').length,
+          admins: workersWithStats.filter(w => w.role === 'ADMIN').length,
+          totalCleanings: workersWithStats.reduce((sum, w) => sum + (w.stats?.totalCleanings || 0), 0),
+          todayCleanings: workersWithStats.reduce((sum, w) => sum + (w.stats?.todayCleanings || 0), 0),
+          weekCleanings: workersWithStats.reduce((sum, w) => sum + (w.stats?.weekCleanings || 0), 0),
+          monthCleanings: workersWithStats.reduce((sum, w) => sum + (w.stats?.monthCleanings || 0), 0),
+          averageTime: workersWithStats.reduce((sum, w) => sum + (w.stats?.averageTime || 0), 0) / Math.max(workersWithStats.length, 1),
+        };
+        setWorkerStats(stats);
+        
       } else {
         setError(response.error || 'Erro ao carregar funcionários');
       }
@@ -152,9 +218,7 @@ const Workers = () => {
   const handleSaveWorker = async () => {
     console.log('🔍 [Workers.jsx] Iniciando salvamento...');
     
-    // Validações básicas
     if (!newWorker.name || !newWorker.email || !newWorker.phone) {
-      console.log('❌ [Workers.jsx] Campos obrigatórios faltando');
       setMessage({ type: 'error', text: 'Preencha todos os campos obrigatórios' });
       return;
     }
@@ -164,7 +228,6 @@ const Workers = () => {
       return;
     }
 
-    // ✅ PREPARAR DADOS CORRETAMENTE para API
     const userDataToSend = {
       name: newWorker.name.trim(),
       email: newWorker.email.trim().toLowerCase(),
@@ -173,13 +236,9 @@ const Workers = () => {
       status: 'ACTIVE'
     };
 
-    // Se for criação OU atualização com nova senha, incluir senha
     if (!selectedWorker || (newWorker.password && newWorker.password !== '')) {
       userDataToSend.password = newWorker.password || 'senha123';
-      userDataToSend.confirmPassword = newWorker.confirmPassword || newWorker.password;
     }
-
-    console.log('📤 [Workers.jsx] Dados para enviar:', userDataToSend);
 
     try {
       setSubmitting(true);
@@ -187,16 +246,10 @@ const Workers = () => {
 
       let response;
       if (selectedWorker) {
-        // Atualizar funcionário
-        console.log('🔄 [Workers.jsx] Atualizando usuário:', selectedWorker.id);
         response = await userService.updateUser(selectedWorker.id, userDataToSend);
       } else {
-        // Novo funcionário
-        console.log('➕ [Workers.jsx] Criando novo usuário');
         response = await userService.createUser(userDataToSend);
       }
-
-      console.log('📥 [Workers.jsx] Resposta do servidor:', response);
 
       if (response && response.success) {
         const successMsg = selectedWorker 
@@ -205,7 +258,6 @@ const Workers = () => {
         
         setMessage({ type: 'success', text: successMsg });
         
-        // Fechar dialog após 2 segundos e recarregar lista
         setTimeout(() => {
           handleCloseDialog();
           fetchWorkers();
@@ -265,16 +317,6 @@ const Workers = () => {
     alert(`QR Code de ${worker.name}: QR-FUNC-${workerId}\n\nEm um sistema real, aqui seria gerado um QR Code para download.`);
   };
 
-  // Estatísticas
-  const stats = {
-    total: workers.length,
-    active: workers.filter(w => w.status === 'ACTIVE').length,
-    cleaners: workers.filter(w => w.role === 'CLEANER').length,
-    supervisors: workers.filter(w => w.role === 'SUPERVISOR').length,
-    totalCleanings: workers.reduce((sum, w) => sum + (w.stats?.totalCleanings || 0), 0),
-    todayCleanings: workers.reduce((sum, w) => sum + (w.stats?.todayCleanings || 0), 0),
-  };
-
   if (user?.role !== 'ADMIN') {
     return (
       <Container maxWidth="xl" sx={{ py: 3 }}>
@@ -330,13 +372,13 @@ const Workers = () => {
         </Button>
       </Box>
 
-      {/* Estatísticas */}
+      {/* Estatísticas REAIS */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={4} lg={2}>
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ color: '#1976d2', fontWeight: 700 }}>
-                {stats.total}
+                {workerStats.total || 0}
               </Typography>
               <Typography variant="body2" color="textSecondary">
                 Total de Funcionários
@@ -348,7 +390,7 @@ const Workers = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ color: '#4caf50', fontWeight: 700 }}>
-                {stats.active}
+                {workerStats.active || 0}
               </Typography>
               <Typography variant="body2" color="textSecondary">
                 Ativos
@@ -359,8 +401,8 @@ const Workers = () => {
         <Grid item xs={12} sm={6} md={4} lg={2}>
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
-              <Typography variant="h3" sx={{ color: '#2196f3', fontWeight: 700 }}>
-                {stats.cleaners}
+              <Typography variant="h3" sx={{ color: '#4caf50', fontWeight: 700 }}>
+                {workerStats.cleaners || 0}
               </Typography>
               <Typography variant="body2" color="textSecondary">
                 Funcionários
@@ -371,8 +413,8 @@ const Workers = () => {
         <Grid item xs={12} sm={6} md={4} lg={2}>
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
-              <Typography variant="h3" sx={{ color: '#9c27b0', fontWeight: 700 }}>
-                {stats.supervisors}
+              <Typography variant="h3" sx={{ color: '#2196f3', fontWeight: 700 }}>
+                {workerStats.supervisors || 0}
               </Typography>
               <Typography variant="body2" color="textSecondary">
                 Supervisores
@@ -384,7 +426,7 @@ const Workers = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ color: '#ff9800', fontWeight: 700 }}>
-                {stats.totalCleanings}
+                {workerStats.totalCleanings || 0}
               </Typography>
               <Typography variant="body2" color="textSecondary">
                 Limpezas Totais
@@ -396,7 +438,7 @@ const Workers = () => {
           <Card>
             <CardContent sx={{ textAlign: 'center' }}>
               <Typography variant="h3" sx={{ color: '#00bcd4', fontWeight: 700 }}>
-                {stats.todayCleanings}
+                {workerStats.todayCleanings || 0}
               </Typography>
               <Typography variant="body2" color="textSecondary">
                 Hoje
@@ -406,7 +448,7 @@ const Workers = () => {
         </Grid>
       </Grid>
 
-      {/* Tabela de Funcionários */}
+      {/* Tabela de Funcionários com dados REAIS */}
       <Paper sx={{ borderRadius: 2, overflow: 'hidden' }}>
         {loading ? (
           <LinearProgress sx={{ mb: 2 }} />
@@ -420,6 +462,7 @@ const Workers = () => {
                   <TableCell><strong>Contato</strong></TableCell>
                   <TableCell><strong>Status</strong></TableCell>
                   <TableCell><strong>Admissão</strong></TableCell>
+                  <TableCell><strong>Último Acesso</strong></TableCell>
                   <TableCell><strong>Limpezas</strong></TableCell>
                   <TableCell><strong>Ações</strong></TableCell>
                 </TableRow>
@@ -434,7 +477,7 @@ const Workers = () => {
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center' }}>
                           <Avatar sx={{ width: 40, height: 40, mr: 2, bgcolor: roleInfo.color }}>
-                            {worker.name.split(' ').map(n => n[0]).join('')}
+                            {worker.name?.split(' ').map(n => n[0]).join('')}
                           </Avatar>
                           <Box>
                             <Typography variant="body1" fontWeight={500}>
@@ -473,18 +516,46 @@ const Workers = () => {
                         <Typography variant="body2">
                           {formatDate(worker.createdAt)}
                         </Typography>
-                        <Typography variant="caption" color="textSecondary">
-                          {worker.lastLogin ? `Último login: ${formatDate(worker.lastLogin, 'dd/MM HH:mm')}` : 'Nunca logou'}
-                        </Typography>
                       </TableCell>
                       <TableCell>
                         <Box>
-                          <Typography variant="body2">
-                            <strong>{worker.stats?.todayCleanings || 0}</strong> hoje
+                          {worker.lastLogin ? (
+                            <>
+                              <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
+                                <LoginIcon fontSize="small" sx={{ mr: 0.5, color: '#4caf50' }} />
+                                {formatDate(worker.lastLogin, 'dd/MM/yyyy HH:mm')}
+                              </Typography>
+                              <Typography variant="caption" color="textSecondary">
+                                {worker.loginCount || 1} {worker.loginCount === 1 ? 'acesso' : 'acessos'}
+                              </Typography>
+                            </>
+                          ) : (
+                            <Typography variant="body2" sx={{ color: '#ff9800', display: 'flex', alignItems: 'center' }}>
+                              <PendingActions fontSize="small" sx={{ mr: 0.5 }} />
+                              Nunca logou
+                            </Typography>
+                          )}
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Box>
+                          <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
+                            <CleaningServices fontSize="small" sx={{ mr: 0.5, color: '#1976d2' }} />
+                            <strong>{worker.stats?.todayCleanings || 0}</strong>&nbsp;hoje
                           </Typography>
                           <Typography variant="caption" color="textSecondary">
                             {worker.stats?.totalCleanings || 0} total
                           </Typography>
+                          {worker.stats?.averageTime > 0 && (
+                            <Typography variant="caption" color="textSecondary" display="block">
+                              ⏱️ {worker.stats.averageTime} min média
+                            </Typography>
+                          )}
+                          {worker.stats?.lastCleaning && (
+                            <Typography variant="caption" color="textSecondary" display="block">
+                              🧹 Última: {formatDate(worker.stats.lastCleaning.date, 'dd/MM HH:mm')}
+                            </Typography>
+                          )}
                         </Box>
                       </TableCell>
                       <TableCell>
@@ -584,24 +655,9 @@ const Workers = () => {
                 label="Cargo *"
                 onChange={(e) => setNewWorker({ ...newWorker, role: e.target.value })}
               >
-                <MenuItem value="CLEANER">
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Badge sx={{ mr: 1, color: '#4caf50' }} />
-                    Funcionário de Limpeza
-                  </Box>
-                </MenuItem>
-                <MenuItem value="SUPERVISOR">
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Badge sx={{ mr: 1, color: '#2196f3' }} />
-                    Supervisor
-                  </Box>
-                </MenuItem>
-                <MenuItem value="ADMIN">
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Badge sx={{ mr: 1, color: '#1976d2' }} />
-                    Administrador
-                  </Box>
-                </MenuItem>
+                <MenuItem value="CLEANER">Funcionário de Limpeza</MenuItem>
+                <MenuItem value="SUPERVISOR">Supervisor</MenuItem>
+                <MenuItem value="ADMIN">Administrador</MenuItem>
               </Select>
             </FormControl>
 
