@@ -1,25 +1,131 @@
 import api from './api';
 
 const userService = {
-  // ... SEUS MÉTODOS EXISTENTES ...
-  // (getUsers, createUser, updateUser, deleteUser, resetPassword, getUserStats)
+  // =========================================================
+  // ✅ MÉTODO PRINCIPAL - FALTANDO!
+  // =========================================================
+  getUsers: async (params = {}) => {
+    try {
+      console.log('📥 [userService] Buscando usuários...');
+      const response = await api.get('/users', { params });
+      
+      console.log('✅ [userService] Usuários recebidos:', response);
+      
+      return {
+        success: !!response?.success,
+        data: response?.users || response?.workers || response?.data || [],
+        error: response?.error || response?.message,
+      };
+    } catch (error) {
+      console.error('❌ [userService] Erro ao buscar usuários:', error.message);
+      return {
+        success: false,
+        data: [],
+        error: error.message || 'Erro ao carregar funcionários',
+      };
+    }
+  },
+
+  // =========================================================
+  // ✅ MÉTODOS DE CRUD
+  // =========================================================
+  createUser: async (userData) => {
+    try {
+      console.log('📤 [userService] Criando usuário:', userData);
+      const response = await api.post('/users', userData);
+      return {
+        success: !!response?.success,
+        data: response?.user || response?.worker || response?.data || response,
+        error: response?.error || response?.message,
+      };
+    } catch (error) {
+      console.error('❌ [userService] Erro ao criar usuário:', error.message);
+      return {
+        success: false,
+        error: error.message || 'Erro ao criar funcionário',
+      };
+    }
+  },
+
+  updateUser: async (id, userData) => {
+    try {
+      console.log(`📤 [userService] Atualizando usuário ${id}:`, userData);
+      const response = await api.put(`/users/${id}`, userData);
+      return {
+        success: !!response?.success,
+        data: response?.user || response?.worker || response?.data || response,
+        error: response?.error || response?.message,
+      };
+    } catch (error) {
+      console.error(`❌ [userService] Erro ao atualizar usuário ${id}:`, error.message);
+      return {
+        success: false,
+        error: error.message || 'Erro ao atualizar funcionário',
+      };
+    }
+  },
+
+  deleteUser: async (id) => {
+    try {
+      console.log(`🗑️ [userService] Deletando usuário ${id}`);
+      const response = await api.delete(`/users/${id}`);
+      return {
+        success: !!response?.success,
+        data: response?.data || null,
+        error: response?.error || response?.message,
+      };
+    } catch (error) {
+      console.error(`❌ [userService] Erro ao deletar usuário ${id}:`, error.message);
+      return {
+        success: false,
+        error: error.message || 'Erro ao excluir funcionário',
+      };
+    }
+  },
+
+  resetPassword: async (id, password) => {
+    try {
+      console.log(`🔐 [userService] Resetando senha do usuário ${id}`);
+      const response = await api.post(`/users/${id}/reset-password`, { password });
+      return {
+        success: !!response?.success,
+        data: response?.data || null,
+        error: response?.error || response?.message,
+      };
+    } catch (error) {
+      console.error(`❌ [userService] Erro ao resetar senha do usuário ${id}:`, error.message);
+      return {
+        success: false,
+        error: error.message || 'Erro ao resetar senha',
+      };
+    }
+  },
+
+  getUserStats: async () => {
+    try {
+      console.log('📊 [userService] Buscando estatísticas gerais');
+      const response = await api.get('/users/stats');
+      return {
+        success: !!response?.success,
+        data: response?.stats || response?.data || response,
+        error: response?.error || response?.message,
+      };
+    } catch (error) {
+      console.error('❌ [userService] Erro ao buscar estatísticas:', error.message);
+      return {
+        success: false,
+        error: error.message || 'Erro ao buscar estatísticas',
+      };
+    }
+  },
 
   // =========================================================
   // ✅ NOVOS MÉTODOS - ESTATÍSTICAS DOS FUNCIONÁRIOS
   // =========================================================
-
-  /**
-   * ✅ Buscar estatísticas de limpeza de um funcionário
-   * GET /api/users/:id/stats
-   * @param {string} userId - ID do funcionário
-   * @returns {Promise} { total, today, week, month, averageTime, lastCleaning }
-   */
   getWorkerStats: async (userId) => {
     try {
       console.log(`📊 [userService] Buscando estatísticas do funcionário ${userId}`);
       const response = await api.get(`/users/${userId}/stats`);
-      
-      console.log('✅ [userService] Estatísticas recebidas:', response);
       
       return {
         success: true,
@@ -47,18 +153,10 @@ const userService = {
     }
   },
 
-  /**
-   * ✅ Buscar histórico de login de um funcionário
-   * GET /api/users/:id/login-history
-   * @param {string} userId - ID do funcionário
-   * @returns {Promise} { lastLogin, firstLogin, count, activities }
-   */
   getUserLoginHistory: async (userId) => {
     try {
       console.log(`🔐 [userService] Buscando histórico de login do funcionário ${userId}`);
       const response = await api.get(`/users/${userId}/login-history`);
-      
-      console.log('✅ [userService] Histórico de login recebido:', response);
       
       return {
         success: true,
@@ -81,18 +179,10 @@ const userService = {
     }
   },
 
-  /**
-   * ✅ Buscar performance detalhada de um funcionário
-   * GET /api/users/:id/performance
-   * @param {string} userId - ID do funcionário
-   * @returns {Promise} { byDayOfWeek, byHour, byRoomType }
-   */
   getWorkerPerformance: async (userId) => {
     try {
       console.log(`📈 [userService] Buscando performance do funcionário ${userId}`);
       const response = await api.get(`/users/${userId}/performance`);
-      
-      console.log('✅ [userService] Performance recebida:', response);
       
       return {
         success: true,
@@ -113,15 +203,6 @@ const userService = {
     }
   },
 
-  // =========================================================
-  // ✅ MÉTODO PARA ATUALIZAR O WORKERS.JSX COM OS DADOS REAIS
-  // =========================================================
-
-  /**
-   * ✅ Buscar dados COMPLETOS de um funcionário (stats + login history)
-   * @param {string} userId - ID do funcionário
-   * @returns {Promise} Dados consolidados
-   */
   getWorkerFullData: async (userId) => {
     try {
       const [stats, loginHistory] = await Promise.all([
