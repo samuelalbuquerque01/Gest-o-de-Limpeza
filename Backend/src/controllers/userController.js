@@ -1,4 +1,4 @@
-// Backend/src/controllers/userController.js - VERSÃO COMPLETA
+// Backend/src/controllers/userController.js - VERSÃO COMPLETA CORRIGIDA
 const bcrypt = require('bcryptjs');
 const prisma = require('../utils/database');
 
@@ -249,8 +249,7 @@ const userController = {
       
       // Verificar se usuário existe
       const user = await prisma.user.findUnique({
-        where: { id },
-        select: { id: true, role: true }
+        where: { id }
       });
 
       if (!user) {
@@ -444,21 +443,12 @@ const userController = {
         take: 20
       });
 
-      // Calcular estatísticas de login
-      // Se você tiver uma tabela de sessões, use ela
-      // Por enquanto, usamos dados do usuário
-      const loginStats = {
-        lastLogin: user.lastLogin,
-        firstLogin: user.createdAt,
-        totalLogins: user.lastLogin ? 1 : 0, // Simplificado
-        lastLoginDaysAgo: user.lastLogin 
-          ? Math.floor((new Date() - new Date(user.lastLogin)) / (1000 * 60 * 60 * 24))
-          : null
-      };
-
       return res.json({
         success: true,
-        ...loginStats,
+        lastLogin: user.lastLogin,
+        firstLogin: user.createdAt,
+        totalLogins: user.lastLogin ? 1 : 0,
+        activityCount: cleaningHistory.length,
         activities: cleaningHistory.map(c => ({
           id: c.id,
           type: 'cleaning',
@@ -470,8 +460,7 @@ const userController = {
           duration: c.startedAt && c.completedAt 
             ? Math.round((new Date(c.completedAt) - new Date(c.startedAt)) / (1000 * 60))
             : null
-        })),
-        activityCount: cleaningHistory.length
+        }))
       });
       
     } catch (error) {
@@ -519,46 +508,11 @@ const userController = {
         ORDER BY hour
       `;
 
-      // Performance por tipo de sala
-      const roomTypePerformance = await prisma.cleaningRecord.groupBy({
-        by: ['roomId'],
-        where: {
-          cleanerId: id,
-          status: 'COMPLETED'
-        },
-        _count: { id: true },
-        _avg: {
-          completedAt: true,
-          startedAt: true
-        }
-      });
-
-      // Buscar nomes das salas
-      const roomIds = roomTypePerformance.map(r => r.roomId);
-      const rooms = await prisma.room.findMany({
-        where: { id: { in: roomIds } },
-        select: { id: true, name: true, type: true }
-      });
-
-      const roomPerformance = roomTypePerformance.map(r => {
-        const room = rooms.find(rm => rm.id === r.roomId);
-        return {
-          roomId: r.roomId,
-          roomName: room?.name || 'Desconhecida',
-          roomType: room?.type || 'DESCONHECIDO',
-          total: r._count.id,
-          avgDuration: r._avg.completedAt && r._avg.startedAt
-            ? Math.round((new Date(r._avg.completedAt) - new Date(r._avg.startedAt)) / (1000 * 60))
-            : 0
-        };
-      });
-
       return res.json({
         success: true,
         byDayOfWeek: performance,
         byHour: hourlyPerformance,
-        byRoomType: roomPerformance,
-        totalRooms: roomPerformance.length
+        totalRooms: performance.length
       });
       
     } catch (error) {
@@ -603,7 +557,6 @@ const userController = {
       }
 
       const emailNorm = normalizeEmail(email);
-
       const exists = await prisma.user.findUnique({ where: { email: emailNorm } });
       if (exists) {
         return res.status(409).json({ success: false, message: 'Email já cadastrado' });

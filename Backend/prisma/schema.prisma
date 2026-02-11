@@ -17,6 +17,7 @@ model User {
   status          UserStatus  @default(ACTIVE)
   phone           String?
   avatar          String?
+  lastLogin       DateTime?   // ✅ ADICIONADO! Último acesso do usuário
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
@@ -50,6 +51,9 @@ model Room {
   notes        String?
   lastCleaned  DateTime?
   nextCleaning DateTime?
+  qrVersion    Int         @default(1)      // ✅ ADICIONADO! Versão do QR Code
+  qrGeneratedBy String?                    // ✅ ADICIONADO! Quem gerou o QR
+  qrGeneratedAt DateTime?                 // ✅ ADICIONADO! Quando gerou o QR
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
@@ -59,6 +63,7 @@ model Room {
   @@index([type])
   @@index([status])
   @@index([priority])
+  @@index([qrCode])
 }
 
 enum RoomType {
