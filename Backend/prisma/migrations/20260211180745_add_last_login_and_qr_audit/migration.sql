@@ -4,7 +4,7 @@
   - The values [SUPERVISOR] on the enum `UserRole` will be removed. If these variants are still used in the database, this will fail.
 
 */
--- AlterEnum
+-- AlterEnu
 BEGIN;
 CREATE TYPE "UserRole_new" AS ENUM ('ADMIN', 'CLEANER');
 ALTER TABLE "User" ALTER COLUMN "role" DROP DEFAULT;
