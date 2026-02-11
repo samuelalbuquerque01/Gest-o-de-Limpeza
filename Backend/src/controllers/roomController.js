@@ -1,4 +1,4 @@
-// src/controllers/roomController.js - VERSÃO COMPLETAMENTE CORRIGIDA
+// src/controllers/roomController.js - VERSÃO FINAL CORRIGIDA
 const { PrismaClient } = require("@prisma/client");
 const crypto = require("crypto");
 const QRCode = require('qrcode');
@@ -57,8 +57,60 @@ async function generateQRImage(qrCode, roomData, req) {
   }
 }
 
+// ======================================================================
+// ✅ DTOS PÚBLICOS - RISCO #6 ELIMINADO!
+// ======================================================================
+
+/**
+ * ✅ DTO para dados PÚBLICOS da sala (sem dados sensíveis)
+ */
+const publicRoomDTO = (room) => ({
+  id: room.id,
+  name: room.name,
+  type: room.type,
+  location: room.location,
+  status: room.status,
+  priority: room.priority,
+  // ❌ NÃO incluir: description, notes, qrCode, createdAt, updatedAt, etc
+});
+
+/**
+ * ✅ DTO para ADMIN (dados completos)
+ */
+const adminRoomDTO = (room) => ({
+  ...room,
+  hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
+  qrStatus: room.qrCode && room.qrCode.trim() !== '' ? 'ACTIVE' : 'MISSING',
+  qrURL: room.qrCode ? 
+    `${process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com'}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null,
+  scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
+  printUrl: `/api/qr/print/${room.id}`,
+  downloadUrl: `/api/qr/download/${room.id}`
+});
+
+/**
+ * ✅ DTO para scan de QR Code (público + status limpeza)
+ */
+const scanRoomDTO = (room, activeCleaning) => ({
+  success: true,
+  room: publicRoomDTO(room), // ✅ Apenas dados públicos!
+  isBeingCleaned: !!activeCleaning,
+  currentCleaner: activeCleaning?.cleaner ? {
+    id: activeCleaning.cleaner.id,
+    name: activeCleaning.cleaner.name
+  } : null,
+  activeCleaningId: activeCleaning?.id || null,
+  message: activeCleaning 
+    ? `Esta sala está sendo limpa por ${activeCleaning.cleaner?.name || 'um funcionário'}.` 
+    : 'Sala disponível para limpeza.',
+  scanInfo: {
+    scannedAt: new Date().toISOString(),
+    canStartCleaning: !activeCleaning && room.status === 'PENDING'
+  }
+});
+
 const roomController = {
-  // ✅ BUSCAR AMBIENTE POR ID
+  // ✅ BUSCAR AMBIENTE POR ID - ADMIN (dados completos)
   getRoomById: async (req, res) => {
     try {
       const { id } = req.params;
@@ -81,21 +133,18 @@ const roomController = {
         });
       }
 
-      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
-      const hasQRCode = !!(room.qrCode && room.qrCode.trim() !== '');
-      const qrURL = hasQRCode ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null;
+      // ✅ Se for ADMIN, retorna dados completos
+      if (req.user?.role === 'ADMIN') {
+        return res.json({ 
+          success: true, 
+          room: adminRoomDTO(room)
+        });
+      }
 
+      // ✅ Se for WORKER ou público, retorna apenas dados públicos
       return res.json({ 
         success: true, 
-        room: {
-          ...room,
-          hasQRCode,
-          qrStatus: hasQRCode ? 'ACTIVE' : 'MISSING',
-          qrURL,
-          scanUrl: hasQRCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
-          printUrl: `/api/qr/print/${room.id}`,
-          downloadUrl: `/api/qr/download/${room.id}`
-        }
+        room: publicRoomDTO(room)
       });
     } catch (error) {
       console.error("🔥 getRoomById error:", error);
@@ -107,7 +156,7 @@ const roomController = {
     }
   },
 
-  // ✅ ESCANEAR QR CODE (WORKER) - VERSÃO CORRIGIDA
+  // ✅ ESCANEAR QR CODE (WORKER) - VERSÃO COM DTO PÚBLICO!
   scanQRCode: async (req, res) => {
     try {
       const { qrCode } = req.params;
@@ -139,6 +188,9 @@ const roomController = {
 
       console.log(`✅ Sala encontrada: ${room.name} (ID: ${room.id})`);
 
+      // ✅ AUDITORIA - Registrar scan (opcional)
+      console.log(`📱 QR Code escaneado - Sala: ${room.name}, Horário: ${new Date().toISOString()}`);
+
       // Verificar se há limpeza em andamento
       const activeCleaning = await prisma.cleaningRecord.findFirst({
         where: {
@@ -147,42 +199,16 @@ const roomController = {
         },
         include: {
           cleaner: {
-            select: { id: true, name: true, email: true }
+            select: { id: true, name: true }
           }
         }
       });
 
       console.log(`📊 Status da sala: ${room.status}, Limpeza ativa: ${!!activeCleaning}`);
 
-      // ✅ FORMATO CORRIGIDO - Frontend espera { success, room, isBeingCleaned, ... }
-      return res.json({
-        success: true,
-        room: {
-          id: room.id,
-          name: room.name,
-          type: room.type,
-          location: room.location,
-          status: room.status,
-          qrCode: room.qrCode,
-          priority: room.priority,
-          lastCleaned: room.lastCleaned,
-          description: room.description,
-          notes: room.notes,
-          createdAt: room.createdAt,
-          updatedAt: room.updatedAt
-        },
-        isBeingCleaned: !!activeCleaning,
-        currentCleaner: activeCleaning?.cleaner || null,
-        activeCleaningId: activeCleaning?.id || null,
-        message: activeCleaning 
-          ? `Esta sala está sendo limpa por ${activeCleaning.cleaner?.name || 'um funcionário'}.` 
-          : 'Sala disponível para limpeza.',
-        scanInfo: {
-          scannedAt: new Date().toISOString(),
-          qrCode: room.qrCode,
-          canStartCleaning: !activeCleaning && room.status === 'PENDING'
-        }
-      });
+      // ✅ RETORNA APENAS DADOS PÚBLICOS!
+      return res.json(scanRoomDTO(room, activeCleaning));
+      
     } catch (error) {
       console.error('🔥 Erro ao escanear QR:', error);
       return res.status(500).json({ 
@@ -193,13 +219,14 @@ const roomController = {
     }
   },
 
-  // ✅ GERAR NOVO QR CODE PARA UMA SALA (COM URL)
+  // ✅ GERAR NOVO QR CODE PARA UMA SALA (COM URL e AUDITORIA)
   generateNewQRCode: async (req, res) => {
     try {
       const { id } = req.params;
       const { generateImage = false } = req.body;
+      const adminId = req.user?.id; // ✅ Quem gerou
       
-      console.log(`🔳 Gerando novo QR Code para sala ID: ${id}`);
+      console.log(`🔳 Gerando novo QR Code para sala ID: ${id} pelo admin: ${adminId}`);
 
       const room = await prisma.room.findUnique({
         where: { id }
@@ -220,10 +247,21 @@ const roomController = {
 
       console.log(`✅ Novo QR Code gerado: ${newQRCode}`);
 
+      // ✅ AUDITORIA - Registrar versão do QR Code
+      const currentVersion = room.qrVersion || 0;
+      
       const updatedRoom = await prisma.room.update({
         where: { id },
-        data: { qrCode: newQRCode },
+        data: { 
+          qrCode: newQRCode,
+          qrVersion: currentVersion + 1,     // ✅ Incrementa versão
+          qrGeneratedBy: adminId,             // ✅ Quem gerou
+          qrGeneratedAt: new Date(),          // ✅ Quando gerou
+        },
       });
+
+      // ✅ LOG DE AUDITORIA
+      console.log(`👤 Admin ${adminId} gerou QR Code v${updatedRoom.qrVersion} para sala ${room.name}`);
 
       let qrImage = null;
       let qrURL = null;
@@ -242,7 +280,10 @@ const roomController = {
         qrCode: updatedRoom.qrCode,
         qrImage: qrImage,
         qrURL: scanURL,
-        room: updatedRoom,
+        room: adminRoomDTO(updatedRoom), // ✅ DTO para admin
+        qrVersion: updatedRoom.qrVersion,
+        generatedBy: updatedRoom.qrGeneratedBy,
+        generatedAt: updatedRoom.qrGeneratedAt,
         scanUrl: `/api/rooms/qr/${encodeURIComponent(newQRCode)}`,
         redirectUrl: scanURL,
         downloadUrl: `/api/qr/download/${id}`,
@@ -258,7 +299,7 @@ const roomController = {
     }
   },
 
-  // ✅ ADMIN: listar ambientes (com filtros)
+  // ✅ ADMIN: listar ambientes (com filtros) - DADOS COMPLETOS
   async getRooms(req, res) {
     try {
       const { status, type, priority, q, hasQR } = req.query;
@@ -282,12 +323,26 @@ const roomController = {
 
       if (q) {
         const query = String(q).trim();
-        where.OR = [
-          { name: { contains: query, mode: "insensitive" } },
-          { location: { contains: query, mode: "insensitive" } },
-          { qrCode: { contains: query, mode: "insensitive" } },
-          { description: { contains: query, mode: "insensitive" } },
-        ];
+        // Se já tem OR do filtro hasQR, precisamos combinar
+        if (where.OR) {
+          where.AND = [
+            { OR: where.OR },
+            { OR: [
+              { name: { contains: query, mode: "insensitive" } },
+              { location: { contains: query, mode: "insensitive" } },
+              { qrCode: { contains: query, mode: "insensitive" } },
+              { description: { contains: query, mode: "insensitive" } },
+            ]}
+          ];
+          delete where.OR;
+        } else {
+          where.OR = [
+            { name: { contains: query, mode: "insensitive" } },
+            { location: { contains: query, mode: "insensitive" } },
+            { qrCode: { contains: query, mode: "insensitive" } },
+            { description: { contains: query, mode: "insensitive" } },
+          ];
+        }
       }
 
       const rooms = await prisma.room.findMany({
@@ -295,14 +350,8 @@ const roomController = {
         orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
       });
 
-      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
-      const roomsWithQRInfo = rooms.map(room => ({
-        ...room,
-        hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
-        qrStatus: room.qrCode && room.qrCode.trim() !== '' ? 'ACTIVE' : 'MISSING',
-        scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
-        qrURL: room.qrCode ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null
-      }));
+      // ✅ Admin recebe dados COMPLETOS
+      const roomsWithQRInfo = rooms.map(room => adminRoomDTO(room));
 
       return res.json({ 
         success: true, 
@@ -327,6 +376,7 @@ const roomController = {
   async createRoom(req, res) {
     try {
       const body = req.body || {};
+      const adminId = req.user?.id;
 
       const name = String(body.name || "").trim();
       const type = String(body.type || "ROOM").trim();
@@ -356,6 +406,9 @@ const roomController = {
         notes: body.notes ? String(body.notes) : null,
         lastCleaned: body.lastCleaned ? new Date(body.lastCleaned) : null,
         nextCleaning: body.nextCleaning ? new Date(body.nextCleaning) : null,
+        qrVersion: 1,
+        qrGeneratedBy: adminId,
+        qrGeneratedAt: new Date(),
       };
 
       const room = await prisma.room.create({ data });
@@ -367,14 +420,18 @@ const roomController = {
 
       console.log(`✅ Sala criada com sucesso: ${room.name} (ID: ${room.id})`);
       console.log(`✅ QR Code URL: ${scanURL}`);
+      console.log(`👤 Admin ${adminId} criou sala ${room.name} com QR Code v1`);
 
       return res.status(201).json({
         success: true,
         message: "Ambiente criado com sucesso",
-        room,
+        room: adminRoomDTO(room),
         qrCode: room.qrCode,
         qrImage: qrData?.qrImage || null,
         qrURL: scanURL,
+        qrVersion: 1,
+        generatedBy: adminId,
+        generatedAt: room.qrGeneratedAt,
         scanUrl: `/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}`,
         generatedAt: new Date().toISOString()
       });
@@ -401,8 +458,9 @@ const roomController = {
     try {
       const { id } = req.params;
       const body = req.body || {};
+      const adminId = req.user?.id;
 
-      console.log(`✏️  Atualizando sala ID: ${id}`);
+      console.log(`✏️  Atualizando sala ID: ${id} pelo admin: ${adminId}`);
 
       const data = {
         name: body.name !== undefined ? String(body.name).trim() : undefined,
@@ -415,20 +473,25 @@ const roomController = {
         nextCleaning: body.nextCleaning !== undefined ? (body.nextCleaning ? new Date(body.nextCleaning) : null) : undefined,
       };
 
-      if (body.qrCode !== undefined && String(body.qrCode).trim()) {
-        data.qrCode = String(body.qrCode).trim();
-      }
-
+      // Se está gerando novo QR Code, registra auditoria
       if (body.generateNewQR === true) {
         const room = await prisma.room.findUnique({ where: { id } });
         if (room) {
-          data.qrCode = await generateUniqueQrCode({
+          const newQRCode = await generateUniqueQrCode({
             type: room.type,
             name: room.name,
             location: room.location
           });
-          console.log(`🔳 Novo QR Code gerado: ${data.qrCode}`);
+          
+          data.qrCode = newQRCode;
+          data.qrVersion = (room.qrVersion || 0) + 1;
+          data.qrGeneratedBy = adminId;
+          data.qrGeneratedAt = new Date();
+          
+          console.log(`🔳 Admin ${adminId} gerou NOVO QR Code v${data.qrVersion} para sala ${room.name}`);
         }
+      } else if (body.qrCode !== undefined && String(body.qrCode).trim()) {
+        data.qrCode = String(body.qrCode).trim();
       }
 
       const room = await prisma.room.update({
@@ -438,17 +501,18 @@ const roomController = {
 
       console.log(`✅ Sala atualizada: ${room.name}`);
 
-      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
-      const qrURL = room.qrCode ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null;
-
       return res.json({ 
         success: true, 
         message: "Ambiente atualizado", 
-        room,
+        room: adminRoomDTO(room),
         qrInfo: {
           hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
+          qrVersion: room.qrVersion,
+          generatedBy: room.qrGeneratedBy,
+          generatedAt: room.qrGeneratedAt,
           scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
-          qrURL: qrURL
+          qrURL: room.qrCode ? 
+            `${process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com'}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null
         }
       });
     } catch (error) {
@@ -524,7 +588,7 @@ const roomController = {
     }
   },
 
-  // ✅ WORKER (público): ambientes disponíveis pra limpar
+  // ✅ WORKER (público): ambientes disponíveis pra limpar - APENAS DADOS PÚBLICOS!
   async getAvailableRooms(req, res) {
     try {
       const rooms = await prisma.room.findMany({
@@ -532,19 +596,20 @@ const roomController = {
         orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
       });
 
-      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
-      const roomsWithQR = rooms.map(room => ({
-        ...room,
+      // ✅ Worker recebe APENAS dados públicos!
+      const publicRooms = rooms.map(room => ({
+        ...publicRoomDTO(room),
         hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
-        scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
-        qrURL: room.qrCode ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null
+        // ✅ URL do QR Code é pública (não é dado sensível)
+        qrURL: room.qrCode ? 
+          `${process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com'}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null
       }));
 
       console.log(`📊 ${rooms.length} salas disponíveis para limpeza`);
 
       return res.json({ 
         success: true, 
-        rooms: roomsWithQR,
+        rooms: publicRooms,
         count: rooms.length
       });
     } catch (error) {
@@ -568,7 +633,7 @@ const roomController = {
         prisma.room.count({ where: { status: "NEEDS_ATTENTION" } }),
       ]);
 
-      // ✅ MÉTODO SIMPLES E CONFIÁVEL - Busca todas as salas e filtra no JavaScript
+      // ✅ Busca todas as salas e filtra no JavaScript
       const allRooms = await prisma.room.findMany({
         select: { qrCode: true }
       });
@@ -600,10 +665,11 @@ const roomController = {
     }
   },
 
-  // ✅ GERAR QR CODES PARA TODAS AS SALAS (COM URL)
+  // ✅ GERAR QR CODES PARA TODAS AS SALAS (COM URL e AUDITORIA)
   async generateAllQRCodes(req, res) {
     try {
       console.log('🔳 Iniciando geração de QR Codes para todas as salas');
+      const adminId = req.user?.id;
 
       const rooms = await prisma.room.findMany({
         select: {
@@ -611,7 +677,8 @@ const roomController = {
           name: true,
           type: true,
           location: true,
-          qrCode: true
+          qrCode: true,
+          qrVersion: true
         }
       });
 
@@ -631,7 +698,8 @@ const roomController = {
               id: room.id,
               name: room.name,
               qrCode: room.qrCode,
-              qrURL: qrURL
+              qrURL: qrURL,
+              qrVersion: room.qrVersion || 1
             });
             continue;
           }
@@ -643,21 +711,27 @@ const roomController = {
           });
 
           const qrURL = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(newQRCode)}`;
+          const newVersion = (room.qrVersion || 0) + 1;
 
           await prisma.room.update({
             where: { id: room.id },
-            data: { qrCode: newQRCode }
+            data: { 
+              qrCode: newQRCode,
+              qrVersion: newVersion,
+              qrGeneratedBy: adminId,
+              qrGeneratedAt: new Date()
+            }
           });
 
           results.generated.push({
             id: room.id,
             name: room.name,
             qrCode: newQRCode,
-            qrURL: qrURL
+            qrURL: qrURL,
+            qrVersion: newVersion
           });
 
-          console.log(`✅ QR Code gerado para ${room.name}: ${newQRCode}`);
-          console.log(`🔗 URL: ${qrURL}`);
+          console.log(`✅ QR Code v${newVersion} gerado para ${room.name}: ${newQRCode}`);
         } catch (roomError) {
           console.error(`🔥 Erro ao gerar QR para ${room.name}:`, roomError);
           results.failed.push({
@@ -667,6 +741,8 @@ const roomController = {
           });
         }
       }
+
+      console.log(`👤 Admin ${adminId} gerou QR Codes em lote - ${results.generated.length} novos, ${results.alreadyHave.length} existentes`);
 
       return res.json({
         success: true,
@@ -690,10 +766,18 @@ const roomController = {
     }
   },
 
-  // ✅ VERIFICAR QR CODE DE UMA SALA
+  // ✅ VERIFICAR QR CODE DE UMA SALA - APENAS ADMIN
   async getRoomQRStatus(req, res) {
     try {
       const { id } = req.params;
+
+      // ✅ Apenas admin pode ver status detalhado
+      if (req.user?.role !== 'ADMIN') {
+        return res.status(403).json({
+          success: false,
+          message: 'Acesso negado'
+        });
+      }
 
       const room = await prisma.room.findUnique({
         where: { id },
@@ -702,7 +786,10 @@ const roomController = {
           name: true,
           qrCode: true,
           type: true,
-          location: true
+          location: true,
+          qrVersion: true,
+          qrGeneratedBy: true,
+          qrGeneratedAt: true
         }
       });
 
@@ -718,38 +805,30 @@ const roomController = {
       const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const qrURL = hasQR ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null;
 
-      let qrData = null;
-      if (hasQR) {
-        qrData = {
-          type: 'ROOM',
-          roomId: room.id,
-          roomName: room.name,
-          roomType: room.type,
-          location: room.location,
-          qrCode: room.qrCode,
-          qrURL: qrURL,
-          scanUrl: `/api/rooms/qr/${encodeURIComponent(room.qrCode)}`,
-          downloadUrl: `/api/qr/download/${room.id}`
-        };
+      // ✅ Buscar informações do admin que gerou
+      let generatedByAdmin = null;
+      if (room.qrGeneratedBy) {
+        const admin = await prisma.user.findUnique({
+          where: { id: room.qrGeneratedBy },
+          select: { id: true, name: true, email: true }
+        });
+        generatedByAdmin = admin;
       }
 
       return res.json({
         success: true,
         data: {
-          room: {
-            id: room.id,
-            name: room.name,
-            type: room.type,
-            location: room.location
-          },
+          room: publicRoomDTO(room),
           qr: {
             hasQRCode: hasQR,
             code: room.qrCode,
             status: hasQR ? 'ACTIVE' : 'MISSING',
             needsGeneration: !hasQR,
-            qrURL: qrURL
+            qrURL: qrURL,
+            version: room.qrVersion || 1,
+            generatedBy: generatedByAdmin,
+            generatedAt: room.qrGeneratedAt
           },
-          qrData,
           actions: {
             canGenerate: !hasQR,
             canDownload: hasQR,

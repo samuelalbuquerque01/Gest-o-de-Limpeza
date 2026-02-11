@@ -1,4 +1,4 @@
-// src/controllers/cleaningController.js
+// src/controllers/cleaningController.js - VERSÃO CORRIGIDA COM VALIDAÇÃO
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
@@ -8,10 +8,78 @@ function startOfToday() {
   return d;
 }
 
+// ======================================================================
+// ✅ CHECKLISTS CENTRALIZADOS (mesmo do frontend)
+// ======================================================================
+const CHECKLISTS = {
+  ROOM: [
+    { id: "floor", label: "Aspirar/limpar chão" },
+    { id: "furniture", label: "Limpar móveis" },
+    { id: "trash", label: "Esvaziar lixeiras" },
+    { id: "windows", label: "Limpar janelas" },
+    { id: "lights", label: "Verificar lâmpadas" }
+  ],
+  BATHROOM: [
+    { id: "toilet", label: "Limpar vaso sanitário" },
+    { id: "sink", label: "Limpar pia" },
+    { id: "mirror", label: "Limpar espelho" },
+    { id: "floor", label: "Limpar chão" },
+    { id: "soap", label: "Repor sabonete" },
+    { id: "paper", label: "Repor papel" }
+  ],
+  KITCHEN: [
+    { id: "counter", label: "Limpar bancadas" },
+    { id: "sink", label: "Limpar pia" },
+    { id: "appliances", label: "Limpar eletrodomésticos" },
+    { id: "trash", label: "Esvaziar lixo" },
+    { id: "floor", label: "Limpar chão" }
+  ],
+  MEETING_ROOM: [
+    { id: "floor", label: "Aspirar chão" },
+    { id: "table", label: "Limpar mesa" },
+    { id: "chairs", label: "Limpar cadeiras" },
+    { id: "trash", label: "Esvaziar lixeiras" },
+    { id: "whiteboard", label: "Limpar quadro" }
+  ]
+};
+
+// ======================================================================
+// ✅ FUNÇÃO DE VALIDAÇÃO DE CHECKLIST - RISCO #3 ELIMINADO!
+// ======================================================================
+function validateChecklist(roomType, checklist) {
+  // Se não tem checklist, reprova
+  if (!checklist || typeof checklist !== 'object') {
+    throw new Error('Checklist é obrigatório');
+  }
+
+  // Pega os itens obrigatórios para este tipo de sala
+  const requiredItems = CHECKLISTS[roomType] || CHECKLISTS.ROOM;
+  const totalRequired = requiredItems.length;
+  
+  // Conta quantos itens foram marcados como true
+  const completedItems = Object.values(checklist).filter(Boolean).length;
+  
+  // LOG para auditoria
+  console.log(`📋 Validação de checklist - Sala: ${roomType}, Completados: ${completedItems}/${totalRequired}`);
+  
+  // ✅ REGRA: 100% dos itens devem estar marcados!
+  if (completedItems < totalRequired) {
+    throw new Error(`Checklist incompleto: ${completedItems}/${totalRequired} itens. Complete todos os itens obrigatórios.`);
+  }
+  
+  // ✅ REGRA: Todos os itens obrigatórios devem existir no checklist
+  const missingItems = requiredItems.filter(item => !checklist[item.id]);
+  if (missingItems.length > 0) {
+    const missingNames = missingItems.map(i => i.label).join(', ');
+    throw new Error(`Itens não marcados: ${missingNames}`);
+  }
+  
+  return true;
+}
+
 const cleaningController = {
   /**
    * Iniciar limpeza (CLEANER logado)
-   * - usa cleanerId do token se não vier no body
    */
   startCleaning: async (req, res) => {
     try {
@@ -20,7 +88,6 @@ const cleaningController = {
 
       console.log('🧹 Iniciando limpeza:', { roomId, cleanerId });
 
-      // ✅ CORREÇÃO: Remova o tratamento de roomId como objeto
       if (!roomId) {
         return res.status(400).json({ success: false, message: 'ID da sala é obrigatório' });
       }
@@ -95,8 +162,7 @@ const cleaningController = {
   },
 
   /**
-   * Concluir limpeza (CLEANER logado)
-   * - só o dono do registro pode concluir
+   * Concluir limpeza (CLEANER logado) - ✅ COM VALIDAÇÃO DE CHECKLIST!
    */
   completeCleaning: async (req, res) => {
     try {
@@ -130,6 +196,19 @@ const cleaningController = {
         return res.status(409).json({ success: false, message: 'Esta limpeza já foi concluída' });
       }
 
+      // ======================================================================
+      // ✅ VALIDAÇÃO DE CHECKLIST - RISCO #3 ELIMINADO!
+      // ======================================================================
+      try {
+        validateChecklist(record.room.type, checklist);
+      } catch (validationError) {
+        return res.status(400).json({
+          success: false,
+          message: validationError.message,
+          required: CHECKLISTS[record.room.type] || CHECKLISTS.ROOM
+        });
+      }
+
       const completedAt = new Date();
 
       const updatedRecord = await prisma.cleaningRecord.update({
@@ -157,7 +236,11 @@ const cleaningController = {
       return res.json({
         success: true,
         message: 'Limpeza concluída com sucesso',
-        record: updatedRecord
+        record: updatedRecord,
+        validation: {
+          completedItems: Object.values(checklist || {}).filter(Boolean).length,
+          totalItems: (CHECKLISTS[record.room.type] || CHECKLISTS.ROOM).length
+        }
       });
     } catch (error) {
       console.error('🔥 Erro ao concluir limpeza:', error);
@@ -167,7 +250,6 @@ const cleaningController = {
 
   /**
    * Cancelar limpeza (CLEANER logado)
-   * - só o dono do registro pode cancelar
    */
   cancelCleaning: async (req, res) => {
     try {
@@ -205,7 +287,7 @@ const cleaningController = {
         data: {
           status: 'CANCELLED',
           completedAt: new Date(),
-          notes: 'Limpeza cancelada pelo funcionário'
+          notes: notes || 'Limpeza cancelada pelo funcionário'
         }
       });
 
@@ -223,7 +305,6 @@ const cleaningController = {
 
   /**
    * ✅ MINHAS limpezas de hoje (CLEANER logado)
-   * GET /api/cleaning/my/today
    */
   getMyTodayCleanings: async (req, res) => {
     try {
@@ -244,11 +325,10 @@ const cleaningController = {
         orderBy: { createdAt: 'desc' }
       });
 
-      // formato amigável pro seu WorkerInterface
       const cleanings = records.map((r) => ({
         id: r.id,
         roomId: r.roomId,
-        room: r.room, // objeto
+        room: r.room,
         roomType: r.room?.type,
         location: r.room?.location,
         cleanerId: r.cleanerId,
@@ -256,7 +336,10 @@ const cleaningController = {
         startedAt: r.startedAt,
         completedAt: r.completedAt,
         notes: r.notes,
-        checklist: r.checklist
+        checklist: r.checklist,
+        completionRate: r.checklist ? 
+          Math.round((Object.values(r.checklist).filter(Boolean).length / 
+            (CHECKLISTS[r.room?.type]?.length || CHECKLISTS.ROOM.length)) * 100) : 0
       }));
 
       return res.json({ success: true, cleanings, count: cleanings.length });
@@ -268,7 +351,6 @@ const cleaningController = {
 
   /**
    * ✅ MINHA limpeza ativa (CLEANER logado)
-   * GET /api/cleaning/my/active
    */
   getMyActiveCleaning: async (req, res) => {
     try {
@@ -291,7 +373,6 @@ const cleaningController = {
   },
 
   /**
-   * (mantive o seu)
    * GET /api/cleaning/today
    */
   getTodayCleanings: async (req, res) => {
@@ -312,7 +393,7 @@ const cleaningController = {
 
       const formatted = cleanings.map((c) => ({
         id: c.id,
-        room: c.room, // objeto
+        room: c.room,
         roomType: c.room?.type,
         location: c.room?.location,
         cleaner: c.cleaner?.name,
@@ -328,8 +409,6 @@ const cleaningController = {
       return res.status(500).json({ success: false, message: 'Erro ao buscar limpezas' });
     }
   },
-
-  // ====== abaixo mantive do seu controller (history/active/recent/stats) ======
 
   getRecentCleanings: async (req, res) => {
     try {
