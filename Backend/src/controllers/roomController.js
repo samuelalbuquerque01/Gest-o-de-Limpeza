@@ -269,7 +269,10 @@ const roomController = {
       if (priority && priority !== "ALL") where.priority = priority;
       
       if (hasQR === "true") {
-        where.qrCode = { not: null };
+        where.NOT = [
+          { qrCode: null },
+          { qrCode: "" }
+        ];
       } else if (hasQR === "false") {
         where.OR = [
           { qrCode: null },
@@ -554,7 +557,7 @@ const roomController = {
     }
   },
 
-  // ✅ ADMIN: stats
+  // ✅ ADMIN: stats - VERSÃO CORRIGIDA DEFINITIVA
   async getRoomStats(req, res) {
     try {
       const [total, pending, inProgress, completed, attention] = await Promise.all([
@@ -565,23 +568,13 @@ const roomController = {
         prisma.room.count({ where: { status: "NEEDS_ATTENTION" } }),
       ]);
 
-      const withQR = await prisma.room.count({ 
-        where: { 
-          AND: [
-            { qrCode: { not: null } },
-            { qrCode: { not: "" } }
-          ]
-        } 
+      // ✅ MÉTODO SIMPLES E CONFIÁVEL - Busca todas as salas e filtra no JavaScript
+      const allRooms = await prisma.room.findMany({
+        select: { qrCode: true }
       });
 
-      const withoutQR = await prisma.room.count({ 
-        where: { 
-          OR: [
-            { qrCode: null },
-            { qrCode: "" }
-          ]
-        } 
-      });
+      const withQR = allRooms.filter(r => r.qrCode && r.qrCode.trim() !== '').length;
+      const withoutQR = allRooms.length - withQR;
 
       return res.json({
         success: true,
