@@ -329,7 +329,7 @@ const userController = {
   },
 
   // =========================================================
-  // ✅ GET /api/users/:id/login-history - CORRIGIDO (not: null)
+  // ✅ GET /api/users/:id/login-history - FINALMENTE CORRIGIDO!
   // =========================================================
   getUserLoginHistory: async (req, res) => {
     try {
@@ -349,7 +349,7 @@ const userController = {
         return res.status(404).json({ success: false, message: 'Usuário não encontrado' });
       }
 
-      // ✅ CORRIGIDO: not: null (NÃO DateTime!)
+      // ✅ CORRIGIDO DEFINITIVAMENTE: not: null (NÃO DateTime!)
       const cleaningHistory = await prisma.cleaningRecord.findMany({
         where: { 
           cleanerId: id, 
