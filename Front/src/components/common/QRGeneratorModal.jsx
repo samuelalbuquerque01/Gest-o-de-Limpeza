@@ -1,4 +1,4 @@
-// src/components/common/QRGeneratorModal.jsx
+// src/components/common/QRGeneratorModal.jsx - VERSÃO COMPLETA CORRIGIDA
 import React, { useState, useEffect } from 'react';
 import {
   Dialog,
@@ -159,7 +159,9 @@ const QRGeneratorModal = ({
     setFilteredRooms(filtered);
   }, [allRooms, search, roomFilter]);
 
-  // Gerar QR Code para uma sala
+  // ======================================================================
+  // ✅ FUNÇÃO CORRIGIDA - GERAR QR CODE COM URL (NÃO JSON!)
+  // ======================================================================
   const generateQRForRoom = async (roomData) => {
     try {
       setGenerating(true);
@@ -168,19 +170,16 @@ const QRGeneratorModal = ({
 
       console.log(`🔳 Gerando QR Code para: ${roomData.name}`);
 
-      // Gerar payload do QR Code
-      const qrPayload = {
-        type: 'ROOM',
-        roomId: roomData.id,
-        roomName: roomData.name,
-        roomType: roomData.type,
-        location: roomData.location,
-        qrCode: roomData.qrCode || `QR-${roomData.type}-${roomData.name}-${Date.now()}`,
-        timestamp: Date.now(),
-        clinic: 'Neuropsicocentro',
-        system: 'Cleaning Management System',
-        action: 'scan_to_clean'
-      };
+      // ✅ URL que será codificada no QR Code
+      const baseUrl = process.env.REACT_APP_FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
+      
+      // Garantir que temos um código QR
+      const qrCodeValue = roomData.qrCode || `QR-${roomData.type}-${roomData.name}-${Date.now()}`;
+      
+      // ✅ A URL COMPLETA que abre diretamente o app
+      const qrContent = `${baseUrl}/scan?roomId=${roomData.id}&qr=${encodeURIComponent(qrCodeValue)}`;
+      
+      console.log(`🔗 URL do QR Code: ${qrContent}`);
 
       // Opções para o QR Code
       const qrOptions = {
@@ -193,14 +192,18 @@ const QRGeneratorModal = ({
         }
       };
 
-      // Gerar imagem do QR Code
-      const image = await QRCode.toDataURL(JSON.stringify(qrPayload), qrOptions);
+      // Gerar imagem do QR Code com a URL
+      const image = await QRCode.toDataURL(qrContent, qrOptions);
 
       setQrImage(image);
+      
+      // ✅ Armazenar dados da URL, não o JSON
       setQrData({
-        ...qrPayload,
-        image: image,
-        options: qrOptions,
+        type: 'ROOM',
+        roomId: roomData.id,
+        roomName: roomData.name,
+        qrCode: qrCodeValue,
+        url: qrContent,
         generatedAt: new Date().toISOString()
       });
 
@@ -214,7 +217,7 @@ const QRGeneratorModal = ({
         onSuccess({
           room: roomData,
           qrImage: image,
-          qrData: qrPayload
+          qrData: { url: qrContent }
         });
       }
     } catch (err) {
@@ -226,7 +229,9 @@ const QRGeneratorModal = ({
     }
   };
 
-  // Gerar QR Codes em lote
+  // ======================================================================
+  // ✅ FUNÇÃO CORRIGIDA - GERAR QR CODES EM LOTE COM URL
+  // ======================================================================
   const generateBatchQRCodes = async () => {
     if (selectedRooms.length === 0) {
       setError('Selecione pelo menos uma sala');
@@ -241,6 +246,7 @@ const QRGeneratorModal = ({
 
       const results = [];
       const total = selectedRooms.length;
+      const baseUrl = process.env.REACT_APP_FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
 
       for (let i = 0; i < selectedRooms.length; i++) {
         const roomId = selectedRooms[i];
@@ -248,17 +254,11 @@ const QRGeneratorModal = ({
         
         if (roomData) {
           try {
-            const qrPayload = {
-              type: 'ROOM',
-              roomId: roomData.id,
-              roomName: roomData.name,
-              roomType: roomData.type,
-              location: roomData.location,
-              qrCode: roomData.qrCode || `QR-${roomData.type}-${roomData.name}-${Date.now()}`,
-              timestamp: Date.now()
-            };
+            // ✅ Gerar URL para cada sala
+            const qrCodeValue = roomData.qrCode || `QR-${roomData.type}-${roomData.name}-${Date.now()}`;
+            const qrContent = `${baseUrl}/scan?roomId=${roomData.id}&qr=${encodeURIComponent(qrCodeValue)}`;
 
-            const image = await QRCode.toDataURL(JSON.stringify(qrPayload), {
+            const image = await QRCode.toDataURL(qrContent, {
               errorCorrectionLevel: 'H',
               margin: 1,
               width: 200,
@@ -272,7 +272,7 @@ const QRGeneratorModal = ({
               success: true,
               room: roomData,
               qrImage: image,
-              qrData: qrPayload
+              qrData: { url: qrContent }
             });
           } catch (roomError) {
             results.push({
@@ -304,6 +304,51 @@ const QRGeneratorModal = ({
     }
   };
 
+  // ======================================================================
+  // ✅ FUNÇÃO PARA GERAR QR CODE DE USUÁRIO
+  // ======================================================================
+  const generateUserQRCode = async (userData) => {
+    try {
+      setGenerating(true);
+      setError('');
+      setQrImage('');
+
+      console.log(`👤 Gerando QR Code para usuário: ${userData.name}`);
+
+      const baseUrl = process.env.REACT_APP_FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
+      const qrContent = `${baseUrl}/worker/checkin?userId=${userData.id}&name=${encodeURIComponent(userData.name)}`;
+
+      const image = await QRCode.toDataURL(qrContent, {
+        errorCorrectionLevel: 'H',
+        margin: 2,
+        width: size,
+        color: {
+          dark: '#4caf50',
+          light: '#ffffff'
+        }
+      });
+
+      setQrImage(image);
+      setQrData({
+        type: 'USER',
+        userId: userData.id,
+        userName: userData.name,
+        url: qrContent,
+        generatedAt: new Date().toISOString()
+      });
+
+      setSuccess(`QR Code gerado para ${userData.name}!`);
+      enqueueSnackbar(`QR Code gerado para ${userData.name}`, { variant: 'success' });
+      
+    } catch (err) {
+      console.error('Erro ao gerar QR Code de usuário:', err);
+      setError('Erro ao gerar QR Code: ' + err.message);
+      enqueueSnackbar('Erro ao gerar QR Code', { variant: 'error' });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   // Baixar QR Code
   const handleDownload = async () => {
     if (!qrImage) {
@@ -315,7 +360,6 @@ const QRGeneratorModal = ({
       const roomName = room?.name || 'sala';
       const fileName = `QR-${roomName.replace(/\s+/g, '-')}-${Date.now()}.png`;
       
-      // Criar link para download
       const link = document.createElement('a');
       link.href = qrImage;
       link.download = fileName;
@@ -338,11 +382,9 @@ const QRGeneratorModal = ({
     }
 
     try {
-      // Converter data URL para blob
       const response = await fetch(qrImage);
       const blob = await response.blob();
       
-      // Copiar para área de transferência
       await navigator.clipboard.write([
         new ClipboardItem({
           [blob.type]: blob
@@ -436,7 +478,6 @@ const QRGeneratorModal = ({
             </button>
           </div>
           <script>
-            // Auto-print on page load
             window.onload = function() {
               setTimeout(() => {
                 window.print();
@@ -469,10 +510,15 @@ const QRGeneratorModal = ({
 
   // Gerar QR Code
   const handleGenerate = async () => {
-    if (tabValue === 0 && room) {
+    if (mode === 'single' && room) {
       await generateQRForRoom(room);
-    } else if (tabValue === 1) {
+    } else if (mode === 'batch') {
       await generateBatchQRCodes();
+    } else if (mode === 'user' && selectedUserId) {
+      const userData = users.find(u => u.id === selectedUserId);
+      if (userData) {
+        await generateUserQRCode(userData);
+      }
     }
   };
 
@@ -493,7 +539,6 @@ const QRGeneratorModal = ({
     if (mode === 'batch') {
       return renderBatchMode();
     }
-    
     return renderSingleMode();
   };
 
@@ -619,29 +664,15 @@ const QRGeneratorModal = ({
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
             Pré-visualização (200px)
           </Typography>
+          <Typography variant="caption" color="primary" display="block" sx={{ mt: 1, wordBreak: 'break-all' }}>
+            URL: {qrData?.url}
+          </Typography>
         </Box>
       ) : (
         <Paper sx={{ p: 4, textAlign: 'center', my: 3, bgcolor: '#fafafa' }}>
           <QrCode sx={{ fontSize: 60, color: '#ddd', mb: 2 }} />
           <Typography color="text.secondary">
             Gere o QR Code para ver a pré-visualização
-          </Typography>
-        </Paper>
-      )}
-
-      {/* Dados do QR Code */}
-      {qrData && (
-        <Paper sx={{ p: 2, mt: 3, bgcolor: '#f8f9fa' }}>
-          <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-            Dados do QR Code:
-          </Typography>
-          <Typography variant="caption" component="pre" sx={{ 
-            whiteSpace: 'pre-wrap', 
-            wordBreak: 'break-all',
-            fontSize: '10px',
-            fontFamily: 'monospace'
-          }}>
-            {JSON.stringify(qrData, null, 2)}
           </Typography>
         </Paper>
       )}
@@ -799,19 +830,6 @@ const QRGeneratorModal = ({
               </Grid>
             )}
           </Grid>
-          
-          <Box sx={{ mt: 2, textAlign: 'center' }}>
-            <Button
-              size="small"
-              startIcon={<Download />}
-              onClick={() => {
-                // Implementar download do lote
-                enqueueSnackbar('Download do lote em desenvolvimento', { variant: 'info' });
-              }}
-            >
-              Baixar todos ({generatedBatch.filter(r => r.success).length})
-            </Button>
-          </Box>
         </Paper>
       )}
     </Box>
