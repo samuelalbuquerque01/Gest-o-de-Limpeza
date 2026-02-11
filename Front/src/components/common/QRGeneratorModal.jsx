@@ -1,4 +1,4 @@
-// src/components/common/QRGeneratorModal.jsx - VERSÃO COMPLETA CORRIGIDA
+// src/components/common/QRGeneratorModal.jsx - VERSÃO FINAL CORRIGIDA
 import React, { useState, useEffect } from 'react';
 import {
   Dialog,
@@ -78,7 +78,7 @@ const QRGeneratorModal = ({
   rooms = [], 
   title = "Gerar QR Code",
   onSuccess,
-  mode = 'single' // 'single', 'batch', 'user'
+  mode = 'single'
 }) => {
   const { enqueueSnackbar } = useSnackbar();
   
@@ -107,10 +107,7 @@ const QRGeneratorModal = ({
   const [filteredRooms, setFilteredRooms] = useState([]);
   const [search, setSearch] = useState('');
   const [roomFilter, setRoomFilter] = useState('all');
-  const [selectedUserId, setSelectedUserId] = useState('');
-  const [users, setUsers] = useState([]);
 
-  // Carregar salas quando modal abrir
   useEffect(() => {
     if (open && mode === 'batch') {
       fetchAllRooms();
@@ -132,13 +129,9 @@ const QRGeneratorModal = ({
     }
   };
 
-  // Filtrar salas
   useEffect(() => {
     if (!allRooms.length) return;
-
     let filtered = [...allRooms];
-
-    // Filtrar por busca
     if (search.trim()) {
       const query = search.toLowerCase();
       filtered = filtered.filter(room =>
@@ -148,19 +141,16 @@ const QRGeneratorModal = ({
         (room.qrCode && room.qrCode.toLowerCase().includes(query))
       );
     }
-
-    // Filtrar por tipo
     if (roomFilter !== 'all') {
       filtered = filtered.filter(room => 
         roomFilter === 'withQR' ? room.qrCode : !room.qrCode
       );
     }
-
     setFilteredRooms(filtered);
   }, [allRooms, search, roomFilter]);
 
   // ======================================================================
-  // ✅ FUNÇÃO CORRIGIDA - GERAR QR CODE COM URL (NÃO JSON!)
+  // ✅ FUNÇÃO CORRIGIDA - GERA QR CODE COM URL (NÃO JSON!)
   // ======================================================================
   const generateQRForRoom = async (roomData) => {
     try {
@@ -170,18 +160,13 @@ const QRGeneratorModal = ({
 
       console.log(`🔳 Gerando QR Code para: ${roomData.name}`);
 
-      // ✅ URL que será codificada no QR Code
+      // ✅ URL CORRETA que vai no QR Code
       const baseUrl = process.env.REACT_APP_FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
-      
-      // Garantir que temos um código QR
       const qrCodeValue = roomData.qrCode || `QR-${roomData.type}-${roomData.name}-${Date.now()}`;
-      
-      // ✅ A URL COMPLETA que abre diretamente o app
       const qrContent = `${baseUrl}/scan?roomId=${roomData.id}&qr=${encodeURIComponent(qrCodeValue)}`;
       
-      console.log(`🔗 URL do QR Code: ${qrContent}`);
+      console.log(`✅ URL GERADA: ${qrContent}`);
 
-      // Opções para o QR Code
       const qrOptions = {
         errorCorrectionLevel: options.errorCorrection,
         margin: options.margin,
@@ -192,27 +177,21 @@ const QRGeneratorModal = ({
         }
       };
 
-      // Gerar imagem do QR Code com a URL
+      // ✅ Gerar QR Code com a URL
       const image = await QRCode.toDataURL(qrContent, qrOptions);
 
       setQrImage(image);
-      
-      // ✅ Armazenar dados da URL, não o JSON
       setQrData({
-        type: 'ROOM',
+        url: qrContent,
         roomId: roomData.id,
         roomName: roomData.name,
         qrCode: qrCodeValue,
-        url: qrContent,
         generatedAt: new Date().toISOString()
       });
 
       setSuccess(`QR Code gerado com sucesso para ${roomData.name}!`);
-      
-      // Notificação
       enqueueSnackbar(`QR Code gerado para ${roomData.name}`, { variant: 'success' });
       
-      // Chamar callback de sucesso
       if (onSuccess) {
         onSuccess({
           room: roomData,
@@ -230,7 +209,7 @@ const QRGeneratorModal = ({
   };
 
   // ======================================================================
-  // ✅ FUNÇÃO CORRIGIDA - GERAR QR CODES EM LOTE COM URL
+  // ✅ FUNÇÃO CORRIGIDA - GERA LOTE COM URL (NÃO JSON!)
   // ======================================================================
   const generateBatchQRCodes = async () => {
     if (selectedRooms.length === 0) {
@@ -254,7 +233,6 @@ const QRGeneratorModal = ({
         
         if (roomData) {
           try {
-            // ✅ Gerar URL para cada sala
             const qrCodeValue = roomData.qrCode || `QR-${roomData.type}-${roomData.name}-${Date.now()}`;
             const qrContent = `${baseUrl}/scan?roomId=${roomData.id}&qr=${encodeURIComponent(qrCodeValue)}`;
 
@@ -272,7 +250,7 @@ const QRGeneratorModal = ({
               success: true,
               room: roomData,
               qrImage: image,
-              qrData: { url: qrContent }
+              url: qrContent
             });
           } catch (roomError) {
             results.push({
@@ -282,8 +260,6 @@ const QRGeneratorModal = ({
             });
           }
         }
-
-        // Atualizar progresso
         setProgress(Math.round(((i + 1) / total) * 100));
       }
 
@@ -293,7 +269,6 @@ const QRGeneratorModal = ({
       const failedCount = results.filter(r => !r.success).length;
       
       setSuccess(`Lote concluído: ${successCount} sucessos, ${failedCount} falhas`);
-      
       enqueueSnackbar(`QR Codes gerados: ${successCount} sucessos`, { variant: 'success' });
     } catch (err) {
       setError('Erro ao gerar QR Codes em lote: ' + err.message);
@@ -304,52 +279,6 @@ const QRGeneratorModal = ({
     }
   };
 
-  // ======================================================================
-  // ✅ FUNÇÃO PARA GERAR QR CODE DE USUÁRIO
-  // ======================================================================
-  const generateUserQRCode = async (userData) => {
-    try {
-      setGenerating(true);
-      setError('');
-      setQrImage('');
-
-      console.log(`👤 Gerando QR Code para usuário: ${userData.name}`);
-
-      const baseUrl = process.env.REACT_APP_FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
-      const qrContent = `${baseUrl}/worker/checkin?userId=${userData.id}&name=${encodeURIComponent(userData.name)}`;
-
-      const image = await QRCode.toDataURL(qrContent, {
-        errorCorrectionLevel: 'H',
-        margin: 2,
-        width: size,
-        color: {
-          dark: '#4caf50',
-          light: '#ffffff'
-        }
-      });
-
-      setQrImage(image);
-      setQrData({
-        type: 'USER',
-        userId: userData.id,
-        userName: userData.name,
-        url: qrContent,
-        generatedAt: new Date().toISOString()
-      });
-
-      setSuccess(`QR Code gerado para ${userData.name}!`);
-      enqueueSnackbar(`QR Code gerado para ${userData.name}`, { variant: 'success' });
-      
-    } catch (err) {
-      console.error('Erro ao gerar QR Code de usuário:', err);
-      setError('Erro ao gerar QR Code: ' + err.message);
-      enqueueSnackbar('Erro ao gerar QR Code', { variant: 'error' });
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  // Baixar QR Code
   const handleDownload = async () => {
     if (!qrImage) {
       setError('Gere um QR Code primeiro');
@@ -374,7 +303,6 @@ const QRGeneratorModal = ({
     }
   };
 
-  // Copiar QR Code para área de transferência
   const handleCopy = async () => {
     if (!qrImage) {
       setError('Gere um QR Code primeiro');
@@ -398,7 +326,6 @@ const QRGeneratorModal = ({
     }
   };
 
-  // Imprimir QR Code
   const handlePrint = () => {
     if (!qrImage) {
       setError('Gere um QR Code primeiro');
@@ -412,85 +339,37 @@ const QRGeneratorModal = ({
         <head>
           <title>QR Code - ${room?.name || 'Sala'}</title>
           <style>
-            body { 
-              font-family: Arial, sans-serif; 
-              padding: 40px; 
-              text-align: center;
-            }
-            .qr-container {
-              border: 2px solid #1976d2;
-              padding: 30px;
-              border-radius: 15px;
-              display: inline-block;
-              margin: 20px auto;
-            }
-            .room-name {
-              font-size: 24px;
-              font-weight: bold;
-              color: #1976d2;
-              margin-bottom: 10px;
-            }
-            .room-info {
-              color: #666;
-              margin-bottom: 20px;
-              font-size: 14px;
-            }
-            .qr-image {
-              width: 300px;
-              height: 300px;
-            }
-            .instructions {
-              font-size: 12px;
-              color: #888;
-              margin-top: 20px;
-              border-top: 1px solid #eee;
-              padding-top: 10px;
-            }
-            @media print {
-              body { padding: 0; }
-              .no-print { display: none; }
-            }
+            body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
+            .qr-container { border: 2px solid #1976d2; padding: 30px; border-radius: 15px; display: inline-block; margin: 20px auto; }
+            .room-name { font-size: 24px; font-weight: bold; color: #1976d2; margin-bottom: 10px; }
+            .room-info { color: #666; margin-bottom: 20px; font-size: 14px; }
+            .qr-image { width: 300px; height: 300px; }
+            .instructions { font-size: 12px; color: #888; margin-top: 20px; border-top: 1px solid #eee; padding-top: 10px; }
+            @media print { body { padding: 0; } .no-print { display: none; } }
           </style>
         </head>
         <body>
           <div class="qr-container">
             <div class="room-name">${room?.name || 'Sala'}</div>
-            <div class="room-info">
-              ${room?.type || ''} • ${room?.location || ''}
-            </div>
+            <div class="room-info">${room?.type || ''} • ${room?.location || ''}</div>
             <img src="${qrImage}" alt="QR Code" class="qr-image" />
             <div class="instructions">
-              Escaneie este código com o aplicativo para iniciar a limpeza<br>
+              Escaneie este código para iniciar a limpeza<br>
               Sistema Neuropsicocentro • ${new Date().toLocaleDateString('pt-BR')}
             </div>
           </div>
           <div class="no-print" style="margin-top: 30px;">
-            <button onclick="window.print(); window.close()" style="
-              padding: 10px 20px;
-              background: #1976d2;
-              color: white;
-              border: none;
-              border-radius: 5px;
-              cursor: pointer;
-              font-size: 16px;
-            ">
+            <button onclick="window.print(); window.close()" style="padding: 10px 20px; background: #1976d2; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px;">
               Imprimir QR Code
             </button>
           </div>
-          <script>
-            window.onload = function() {
-              setTimeout(() => {
-                window.print();
-              }, 500);
-            };
-          </script>
+          <script>window.onload = function() { setTimeout(() => { window.print(); }, 500); };</script>
         </body>
       </html>
     `);
     printWindow.document.close();
   };
 
-  // Selecionar/deselecionar todas as salas
   const handleSelectAll = (checked) => {
     if (checked) {
       setSelectedRooms(filteredRooms.map(room => room.id));
@@ -499,7 +378,6 @@ const QRGeneratorModal = ({
     }
   };
 
-  // Selecionar/deselecionar uma sala
   const handleRoomSelect = (roomId, checked) => {
     if (checked) {
       setSelectedRooms(prev => [...prev, roomId]);
@@ -508,21 +386,14 @@ const QRGeneratorModal = ({
     }
   };
 
-  // Gerar QR Code
   const handleGenerate = async () => {
     if (mode === 'single' && room) {
       await generateQRForRoom(room);
     } else if (mode === 'batch') {
       await generateBatchQRCodes();
-    } else if (mode === 'user' && selectedUserId) {
-      const userData = users.find(u => u.id === selectedUserId);
-      if (userData) {
-        await generateUserQRCode(userData);
-      }
     }
   };
 
-  // Fechar modal
   const handleClose = () => {
     setQrImage('');
     setQrData(null);
@@ -534,17 +405,8 @@ const QRGeneratorModal = ({
     onClose();
   };
 
-  // Renderizar conteúdo baseado no modo
-  const renderContent = () => {
-    if (mode === 'batch') {
-      return renderBatchMode();
-    }
-    return renderSingleMode();
-  };
-
   const renderSingleMode = () => (
     <Box>
-      {/* Informações da sala */}
       {room && (
         <Paper sx={{ p: 2, mb: 3, bgcolor: '#f5f5f5' }}>
           <Stack direction="row" spacing={2} alignItems="center">
@@ -572,11 +434,6 @@ const QRGeneratorModal = ({
         </Paper>
       )}
 
-      {/* Opções de personalização */}
-      <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-        Personalizar QR Code
-      </Typography>
-
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={6}>
           <TextField
@@ -597,82 +454,25 @@ const QRGeneratorModal = ({
             </Select>
           </FormControl>
         </Grid>
-        <Grid item xs={6}>
-          <TextField
-            fullWidth
-            label="Cor do QR"
-            type="color"
-            value={options.color}
-            onChange={(e) => setOptions({ ...options, color: e.target.value })}
-            InputProps={{
-              startAdornment: <ColorLens sx={{ mr: 1, color: options.color }} />,
-            }}
-          />
-        </Grid>
-        <Grid item xs={6}>
-          <TextField
-            fullWidth
-            label="Cor de fundo"
-            type="color"
-            value={options.backgroundColor}
-            onChange={(e) => setOptions({ ...options, backgroundColor: e.target.value })}
-          />
-        </Grid>
-        <Grid item xs={6}>
-          <TextField
-            fullWidth
-            label="Margem"
-            type="number"
-            value={options.margin}
-            onChange={(e) => setOptions({ ...options, margin: Math.min(10, Math.max(0, parseInt(e.target.value) || 2)) })}
-            InputProps={{ inputProps: { min: 0, max: 10 } }}
-          />
-        </Grid>
-        <Grid item xs={6}>
-          <FormControl fullWidth>
-            <InputLabel>Correção de erro</InputLabel>
-            <Select 
-              value={options.errorCorrection} 
-              label="Correção de erro"
-              onChange={(e) => setOptions({ ...options, errorCorrection: e.target.value })}
-            >
-              <MenuItem value="L">Baixa (7%)</MenuItem>
-              <MenuItem value="M">Média (15%)</MenuItem>
-              <MenuItem value="Q">Alta (25%)</MenuItem>
-              <MenuItem value="H">Máxima (30%)</MenuItem>
-            </Select>
-          </FormControl>
-        </Grid>
       </Grid>
 
-      <FormControlLabel
-        control={
-          <Switch
-            checked={options.includeText}
-            onChange={(e) => setOptions({ ...options, includeText: e.target.checked })}
-          />
-        }
-        label="Incluir texto da sala"
-      />
-
-      {/* Pré-visualização do QR Code */}
       {qrImage ? (
         <Box sx={{ textAlign: 'center', my: 3 }}>
           <Paper sx={{ p: 2, display: 'inline-block', border: '1px solid #ddd' }}>
             <img src={qrImage} alt="QR Code" style={{ width: '200px', height: '200px' }} />
           </Paper>
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-            Pré-visualização (200px)
+            QR Code gerado com URL
           </Typography>
           <Typography variant="caption" color="primary" display="block" sx={{ mt: 1, wordBreak: 'break-all' }}>
-            URL: {qrData?.url}
+            {qrData?.url}
           </Typography>
         </Box>
       ) : (
         <Paper sx={{ p: 4, textAlign: 'center', my: 3, bgcolor: '#fafafa' }}>
           <QrCode sx={{ fontSize: 60, color: '#ddd', mb: 2 }} />
           <Typography color="text.secondary">
-            Gere o QR Code para ver a pré-visualização
+            Clique em "Gerar QR Code" para criar
           </Typography>
         </Paper>
       )}
@@ -681,7 +481,6 @@ const QRGeneratorModal = ({
 
   const renderBatchMode = () => (
     <Box>
-      {/* Filtros e busca */}
       <Paper sx={{ p: 2, mb: 2 }}>
         <Stack spacing={2}>
           <TextField
@@ -706,20 +505,13 @@ const QRGeneratorModal = ({
               </Select>
             </FormControl>
             
-            <Button
-              size="small"
-              onClick={() => {
-                setSearch('');
-                setRoomFilter('all');
-              }}
-            >
+            <Button size="small" onClick={() => { setSearch(''); setRoomFilter('all'); }}>
               Limpar
             </Button>
           </Stack>
         </Stack>
       </Paper>
 
-      {/* Lista de salas */}
       <Paper sx={{ maxHeight: 300, overflow: 'auto', mb: 2 }}>
         {loading ? (
           <Box sx={{ p: 3, textAlign: 'center' }}>
@@ -727,9 +519,7 @@ const QRGeneratorModal = ({
           </Box>
         ) : filteredRooms.length === 0 ? (
           <Box sx={{ p: 3, textAlign: 'center' }}>
-            <Typography color="text.secondary">
-              Nenhuma sala encontrada
-            </Typography>
+            <Typography color="text.secondary">Nenhuma sala encontrada</Typography>
           </Box>
         ) : (
           <List dense>
@@ -747,9 +537,7 @@ const QRGeneratorModal = ({
                 secondary={`${filteredRooms.length} salas encontradas`}
               />
             </ListItem>
-            
             <Divider />
-            
             {filteredRooms.map((roomItem) => (
               <ListItem key={roomItem.id}>
                 <ListItemIcon>
@@ -787,7 +575,6 @@ const QRGeneratorModal = ({
         )}
       </Paper>
 
-      {/* Progresso do lote */}
       {generating && (
         <Box sx={{ mb: 2 }}>
           <Typography variant="body2" gutterBottom>
@@ -797,13 +584,11 @@ const QRGeneratorModal = ({
         </Box>
       )}
 
-      {/* Resultados do lote */}
       {generatedBatch.length > 0 && (
         <Paper sx={{ p: 2, mt: 2 }}>
           <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
             Resultados do lote
           </Typography>
-          
           <Grid container spacing={1}>
             {generatedBatch.slice(0, 5).map((result, index) => (
               <Grid item xs={12} key={index}>
@@ -821,7 +606,6 @@ const QRGeneratorModal = ({
                 </Paper>
               </Grid>
             ))}
-            
             {generatedBatch.length > 5 && (
               <Grid item xs={12}>
                 <Typography variant="caption" color="text.secondary">
@@ -865,7 +649,6 @@ const QRGeneratorModal = ({
           </Alert>
         )}
 
-        {/* Abas para modo batch */}
         {mode === 'batch' && (
           <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
             <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
@@ -875,7 +658,7 @@ const QRGeneratorModal = ({
           </Box>
         )}
 
-        {renderContent()}
+        {mode === 'batch' ? renderBatchMode() : renderSingleMode()}
       </DialogContent>
 
       <DialogActions sx={{ px: 3, pb: 3, pt: 0 }}>
@@ -915,13 +698,6 @@ const QRGeneratorModal = ({
           {generating ? 'Gerando...' : 'Gerar QR Code'}
         </Button>
       </DialogActions>
-
-      <Snackbar
-        open={toast.open}
-        autoHideDuration={3000}
-        onClose={() => setToast({ ...toast, open: false })}
-        message={toast.message}
-      />
     </Dialog>
   );
 };
