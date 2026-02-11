@@ -1,4 +1,4 @@
-// src/pages/WorkerInterface.jsx - VERSÃO COMPLETA COM COMPROVANTES APENAS VISUALIZAÇÃO
+// src/pages/WorkerInterface.jsx - VERSÃO COMPLETA CORRIGIDA
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Container,
@@ -397,15 +397,184 @@ const WorkerInterface = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // ✅ Handle QR Scan Result
-  const handleQRScanResult = (data) => {
-    if (data.room && !data.isBeingCleaned) {
-      handleRoomSelect(data.room);
-      setActiveTab(1);
-    } else if (data.isBeingCleaned) {
-      setError(`⚠️ Esta sala já está sendo limpa por ${data.currentCleaner?.name || 'outro funcionário'}`);
-    }
+  // ======================================================================
+  // ✅ FUNÇÃO CORRIGIDA PARA PROCESSAR QR CODE SCAN - REDIRECIONAMENTO AUTOMÁTICO
+  // ======================================================================
+  const handleQRScanResult = async (qrText) => {
+    console.log("🔍 [WorkerInterface] QR Code escaneado:", qrText?.substring(0, 50));
     setQrScannerOpen(false);
+    
+    try {
+      setLoading(true);
+      setError("");
+      
+      let roomId = null;
+      let qrCode = null;
+      
+      // 📱 CASO 1: URL completa (formato: https://dominio.com/scan?roomId=xxx&qr=yyy)
+      if (typeof qrText === 'string' && (qrText.includes('http://') || qrText.includes('https://'))) {
+        try {
+          const url = new URL(qrText);
+          roomId = url.searchParams.get('roomId');
+          qrCode = url.searchParams.get('qr');
+          console.log("📱 URL parseada - roomId:", roomId, "qrCode:", qrCode?.substring(0, 20));
+        } catch (e) {
+          console.warn("⚠️ Erro ao parsear URL:", e);
+        }
+      }
+      
+      // 🔑 CASO 2: Apenas o código QR (formato: QR-TIPO-NOME-LOCAL-XXXX)
+      if (!roomId && typeof qrText === 'string' && qrText.startsWith('QR-')) {
+        qrCode = qrText;
+        console.log("🔑 QR Code puro:", qrCode?.substring(0, 30));
+      }
+      
+      // 🎯 Tentar buscar a sala
+      let room = null;
+      
+      // Tentativa 1: Buscar por roomId
+      if (roomId) {
+        try {
+          console.log(`🔍 Buscando sala por ID: ${roomId}`);
+          const response = await api.get(`/rooms/${roomId}`);
+          if (response.success && response.room) {
+            room = response.room;
+            console.log(`✅ Sala encontrada por ID: ${room.name}`);
+          }
+        } catch (err) {
+          console.warn(`⚠️ Erro ao buscar por ID: ${err.message}`);
+        }
+      }
+      
+      // Tentativa 2: Buscar por QR Code
+      if (!room && qrCode) {
+        try {
+          console.log(`🔍 Buscando sala por QR Code: ${qrCode.substring(0, 30)}...`);
+          const response = await api.get(`/rooms/qr/${encodeURIComponent(qrCode)}`);
+          
+          if (response.success) {
+            if (response.data?.room) {
+              room = response.data.room;
+              console.log(`✅ Sala encontrada por QR Code: ${room.name}`);
+            } else if (response.room) {
+              room = response.room;
+              console.log(`✅ Sala encontrada por QR Code (formato antigo): ${room.name}`);
+            }
+          }
+        } catch (err) {
+          console.warn(`⚠️ Erro ao buscar por QR Code: ${err.message}`);
+        }
+      }
+      
+      // Tentativa 3: Buscar em todas as salas disponíveis
+      if (!room && qrCode) {
+        try {
+          console.log(`🔍 Buscando em todas as salas por QR Code: ${qrCode.substring(0, 30)}...`);
+          const allRoomsResponse = await api.get('/rooms/available');
+          
+          if (allRoomsResponse.success && allRoomsResponse.rooms) {
+            room = allRoomsResponse.rooms.find(r => r.qrCode === qrCode);
+            if (room) {
+              console.log(`✅ Sala encontrada na lista geral: ${room.name}`);
+            }
+          }
+        } catch (err) {
+          console.warn(`⚠️ Erro na busca geral: ${err.message}`);
+        }
+      }
+
+      // ❌ Nenhuma sala encontrada
+      if (!room) {
+        setError("❌ QR Code não reconhecido. Sala não encontrada no sistema.");
+        setLoading(false);
+        return;
+      }
+
+      console.log(`🎯 Sala identificada: ${room.name} (${room.id})`);
+
+      // 🚦 Verificar se a sala já está sendo limpa
+      try {
+        const activeResponse = await cleaningService.getMyActiveCleaning();
+        const activeCleaningList = await api.get('/cleaning/active');
+        
+        const isBeingCleaned = activeCleaningList.success && 
+          (activeCleaningList.data || []).some(
+            cleaning => cleaning.roomId === room.id || cleaning.room?.id === room.id
+          );
+        
+        if (isBeingCleaned) {
+          setError(`⚠️ Esta sala já está sendo limpa por outro funcionário.`);
+          setLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.warn("⚠️ Não foi possível verificar limpeza ativa:", err);
+      }
+
+      // ✅ SALA ENCONTRADA - INICIAR LIMPEZA AUTOMATICAMENTE
+      console.log(`🚀 Iniciando limpeza para sala: ${room.name}`);
+      
+      try {
+        const startResponse = await cleaningService.startCleaning(room.id);
+        
+        if (startResponse?.success) {
+          // ✅ SUCESSO - Redirecionar para a tela de limpeza
+          const recordId = startResponse.record?.id || startResponse?.recordId;
+          setCleaningRecordId(recordId);
+          setActiveCleaning(startResponse.record);
+          setSelectedRoom(normalizeRoom(room));
+          
+          // Inicializar checklist
+          const items = CHECKLISTS[room.type] || CHECKLISTS.ROOM;
+          const initial = {};
+          (items || []).forEach((it) => (initial[it.id] = false));
+          setChecklist(initial);
+          setNotes("");
+          
+          // Atualizar estado
+          setStep(3);
+          setActiveTab(1);
+          setSuccess(true);
+          
+          // Mostrar mensagem de sucesso
+          setTimeout(() => setSuccess(false), 3000);
+          
+          // Atualizar listas
+          fetchMyTodayCleanings();
+          fetchAllCleanings();
+          fetchRooms();
+          
+          console.log(`✅ Limpeza iniciada com sucesso! Protocolo: ${recordId}`);
+        } else {
+          // ⚠️ Verificar se já tem uma limpeza ativa
+          if (startResponse?.active?.id) {
+            setActiveCleaning(startResponse.active);
+            setCleaningRecordId(startResponse.active.id);
+            
+            const activeRoom = normalizeRoom(startResponse.active.room);
+            if (activeRoom) {
+              setSelectedRoom(activeRoom);
+              setChecklist(startResponse.active.checklist || {});
+              setNotes(startResponse.active.notes || "");
+              setStep(3);
+              setActiveTab(1);
+              setError("⚠️ Você já tem uma limpeza em andamento. Continuando...");
+            }
+          } else {
+            setError(startResponse?.message || startResponse?.error || "Erro ao iniciar limpeza");
+          }
+        }
+      } catch (startErr) {
+        console.error("🔥 Erro ao iniciar limpeza:", startErr);
+        setError(startErr?.message || startErr?.error || "Erro ao iniciar limpeza");
+      }
+      
+    } catch (err) {
+      console.error("🔥 Erro geral no processamento do QR Code:", err);
+      setError(err?.message || "Erro ao processar QR Code");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleRoomSelect = async (room) => {
@@ -1238,7 +1407,7 @@ const WorkerInterface = () => {
                   </Typography>
                   <Typography variant="caption" color="primary" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 0.5 }}>
                     <AccessTime fontSize="inherit" />
-                    Protocolo: {cleaningRecordId || "-"}
+                    Protocolo: {cleaningRecordId?.substring(0, 8) || "-"}
                   </Typography>
                 </Box>
               </Box>
@@ -1444,7 +1613,7 @@ const WorkerInterface = () => {
 
               <Box sx={{ maxWidth: 400, mx: 'auto', p: 3, border: '1px solid #e0e0e0', borderRadius: 2, mb: 3 }}>
                 <Typography variant="body2" sx={{ mb: 1 }}>
-                  <strong>Protocolo:</strong> {cleaningRecordId}
+                  <strong>Protocolo:</strong> {cleaningRecordId?.substring(0, 8) || "-"}
                 </Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
                   <strong>Data:</strong> {format(new Date(), 'dd/MM/yyyy HH:mm')}
@@ -1971,7 +2140,6 @@ const WorkerInterface = () => {
           open={qrScannerOpen}
           onClose={() => setQrScannerOpen(false)}
           onScan={handleQRScanResult}
-          autoStart={true}
         />
       </Container>
     </>
