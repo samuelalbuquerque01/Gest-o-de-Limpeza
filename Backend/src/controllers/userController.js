@@ -1,4 +1,4 @@
-// Backend/src/controllers/userController.js - VERSÃO COMPLETA CORRIGIDA
+// Backend/src/controllers/userController.js - VERSÃO FINAL 100% CORRIGIDA
 const bcrypt = require('bcryptjs');
 const prisma = require('../utils/database');
 
@@ -73,7 +73,7 @@ const userController = {
         return res.status(409).json({ success: false, message: 'Email já cadastrado' });
       }
 
-      const allowedRoles = ['ADMIN', 'CLEANER', 'SUPERVISOR'];
+      const allowedRoles = ['ADMIN', 'CLEANER'];
       const finalRole = role ? String(role).toUpperCase() : 'CLEANER';
       if (!allowedRoles.includes(finalRole)) {
         return res.status(400).json({ success: false, message: 'Role inválida' });
@@ -121,7 +121,7 @@ const userController = {
         data.password = await hashIfProvided(password);
       }
 
-      if (data.role && !['ADMIN', 'CLEANER', 'SUPERVISOR'].includes(data.role)) {
+      if (data.role && !['ADMIN', 'CLEANER'].includes(data.role)) {
         return res.status(400).json({ success: false, message: 'Role inválida' });
       }
       if (data.status && !['ACTIVE', 'INACTIVE'].includes(data.status)) {
@@ -239,7 +239,7 @@ const userController = {
   },
 
   // =========================================================
-  // ✅ NOVOS ENDPOINTS - ESTATÍSTICAS DO FUNCIONÁRIO
+  // ✅ NOVOS ENDPOINTS - ESTATÍSTICAS DO FUNCIONÁRIO - 100% CORRIGIDOS
   // =========================================================
 
   // GET /api/users/:id/stats
@@ -247,94 +247,44 @@ const userController = {
     try {
       const { id } = req.params;
       
-      // Verificar se usuário existe
-      const user = await prisma.user.findUnique({
-        where: { id }
-      });
-
+      const user = await prisma.user.findUnique({ where: { id } });
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'Usuário não encontrado'
-        });
+        return res.status(404).json({ success: false, message: 'Usuário não encontrado' });
       }
 
-      // Data de hoje (início do dia)
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      // Data de 7 dias atrás
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      weekAgo.setHours(0, 0, 0, 0);
-      
-      // Data de 30 dias atrás
-      const monthAgo = new Date();
-      monthAgo.setDate(monthAgo.getDate() - 30);
-      monthAgo.setHours(0, 0, 0, 0);
+      const today = new Date(); today.setHours(0,0,0,0);
+      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0,0,0,0);
+      const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30); monthAgo.setHours(0,0,0,0);
 
-      // Buscar estatísticas
-      const [
-        totalCleanings,
-        todayCleanings,
-        weekCleanings,
-        monthCleanings,
-        pendingCleanings,
-        inProgressCleanings
-      ] = await Promise.all([
-        // Total de limpezas concluídas
-        prisma.cleaningRecord.count({
-          where: {
-            cleanerId: id,
-            status: 'COMPLETED'
-          }
+      // ✅ APENAS STATUS 'COMPLETED' - QUE EXISTE NO ENUM!
+      const [total, todayCount, weekCount, monthCount] = await Promise.all([
+        prisma.cleaningRecord.count({ 
+          where: { cleanerId: id, status: 'COMPLETED' } 
         }),
-        
-        // Limpezas hoje
-        prisma.cleaningRecord.count({
-          where: {
-            cleanerId: id,
-            status: 'COMPLETED',
-            completedAt: { gte: today }
-          }
+        prisma.cleaningRecord.count({ 
+          where: { 
+            cleanerId: id, 
+            status: 'COMPLETED', 
+            completedAt: { gte: today } 
+          } 
         }),
-        
-        // Limpezas na última semana
-        prisma.cleaningRecord.count({
-          where: {
-            cleanerId: id,
-            status: 'COMPLETED',
-            completedAt: { gte: weekAgo }
-          }
+        prisma.cleaningRecord.count({ 
+          where: { 
+            cleanerId: id, 
+            status: 'COMPLETED', 
+            completedAt: { gte: weekAgo } 
+          } 
         }),
-        
-        // Limpezas no último mês
-        prisma.cleaningRecord.count({
-          where: {
-            cleanerId: id,
-            status: 'COMPLETED',
-            completedAt: { gte: monthAgo }
-          }
-        }),
-        
-        // Limpezas pendentes
-        prisma.cleaningRecord.count({
-          where: {
-            cleanerId: id,
-            status: 'PENDING'
-          }
-        }),
-        
-        // Limpezas em andamento
-        prisma.cleaningRecord.count({
-          where: {
-            cleanerId: id,
-            status: 'IN_PROGRESS'
-          }
+        prisma.cleaningRecord.count({ 
+          where: { 
+            cleanerId: id, 
+            status: 'COMPLETED', 
+            completedAt: { gte: monthAgo } 
+          } 
         })
       ]);
 
-      // Calcular tempo médio
+      // ✅ Cálculo do tempo médio - com NOT: NULL (CORRETO)
       const records = await prisma.cleaningRecord.findMany({
         where: {
           cleanerId: id,
@@ -342,59 +292,43 @@ const userController = {
           startedAt: { not: null },
           completedAt: { not: null }
         },
-        select: {
-          startedAt: true,
-          completedAt: true
-        },
+        select: { startedAt: true, completedAt: true },
         take: 100
       });
       
       let avgDuration = 0;
       if (records.length > 0) {
         const totalMinutes = records.reduce((sum, r) => {
-          const diff = new Date(r.completedAt) - new Date(r.startedAt);
-          return sum + (diff / (1000 * 60));
+          return sum + (new Date(r.completedAt) - new Date(r.startedAt)) / (1000 * 60);
         }, 0);
         avgDuration = Math.round(totalMinutes / records.length);
       }
 
-      // Última limpeza
+      // ✅ Última limpeza
       const lastCleaning = await prisma.cleaningRecord.findFirst({
-        where: {
-          cleanerId: id,
-          status: 'COMPLETED'
-        },
+        where: { cleanerId: id, status: 'COMPLETED' },
         orderBy: { completedAt: 'desc' },
-        select: {
-          completedAt: true,
-          room: {
-            select: { name: true, type: true }
-          }
+        select: { 
+          completedAt: true, 
+          room: { select: { name: true } } 
         }
       });
 
       return res.json({
         success: true,
-        total: totalCleanings,
-        today: todayCleanings,
-        week: weekCleanings,
-        month: monthCleanings,
-        pending: pendingCleanings,
-        inProgress: inProgressCleanings,
+        total: total || 0,
+        today: todayCount || 0,
+        week: weekCount || 0,
+        month: monthCount || 0,
         averageTime: avgDuration,
-        lastCleaning: lastCleaning ? {
-          date: lastCleaning.completedAt,
-          room: lastCleaning.room.name,
-          type: lastCleaning.room.type
-        } : null
+        lastCleaning: lastCleaning || null
       });
       
     } catch (error) {
-      console.error('🔥 Erro ao buscar estatísticas do funcionário:', error);
+      console.error('🔥 Erro ao buscar estatísticas:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao buscar estatísticas',
-        error: error.message 
+        message: 'Erro ao buscar estatísticas' 
       });
     }
   },
@@ -404,31 +338,25 @@ const userController = {
     try {
       const { id } = req.params;
       
-      // Verificar se usuário existe
       const user = await prisma.user.findUnique({
         where: { id },
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          lastLogin: true,
+        select: { 
+          lastLogin: true, 
           createdAt: true,
-          updatedAt: true
+          name: true,
+          email: true 
         }
       });
 
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'Usuário não encontrado'
-        });
+        return res.status(404).json({ success: false, message: 'Usuário não encontrado' });
       }
 
-      // Buscar histórico de limpezas como atividade
+      // ✅ Buscar atividades de limpeza - com NOT: NULL (CORRETO)
       const cleaningHistory = await prisma.cleaningRecord.findMany({
-        where: {
-          cleanerId: id,
-          startedAt: { not: null }
+        where: { 
+          cleanerId: id, 
+          startedAt: { not: null } 
         },
         orderBy: { startedAt: 'desc' },
         select: {
@@ -436,8 +364,11 @@ const userController = {
           startedAt: true,
           completedAt: true,
           status: true,
-          room: {
-            select: { name: true, type: true, location: true }
+          room: { 
+            select: { 
+              name: true,
+              location: true 
+            } 
           }
         },
         take: 20
@@ -448,7 +379,6 @@ const userController = {
         lastLogin: user.lastLogin,
         firstLogin: user.createdAt,
         totalLogins: user.lastLogin ? 1 : 0,
-        activityCount: cleaningHistory.length,
         activities: cleaningHistory.map(c => ({
           id: c.id,
           type: 'cleaning',
@@ -464,11 +394,10 @@ const userController = {
       });
       
     } catch (error) {
-      console.error('🔥 Erro ao buscar histórico de login:', error);
+      console.error('🔥 Erro ao buscar histórico:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao buscar histórico de login',
-        error: error.message 
+        message: 'Erro ao buscar histórico de login' 
       });
     }
   },
@@ -478,7 +407,6 @@ const userController = {
     try {
       const { id } = req.params;
       
-      // Performance por dia da semana
       const performance = await prisma.$queryRaw`
         SELECT 
           EXTRACT(DOW FROM "completedAt") as day_of_week,
@@ -493,7 +421,6 @@ const userController = {
         ORDER BY day_of_week
       `;
 
-      // Performance por hora do dia
       const hourlyPerformance = await prisma.$queryRaw`
         SELECT 
           EXTRACT(HOUR FROM "startedAt") as hour,
@@ -519,8 +446,7 @@ const userController = {
       console.error('🔥 Erro ao buscar performance:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao buscar performance',
-        error: error.message 
+        message: 'Erro ao buscar performance' 
       });
     }
   },
