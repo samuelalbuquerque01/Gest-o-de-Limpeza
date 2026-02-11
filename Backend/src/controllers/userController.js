@@ -239,10 +239,8 @@ const userController = {
   },
 
   // =========================================================
-  // ✅ NOVOS ENDPOINTS - ESTATÍSTICAS DO FUNCIONÁRIO - 100% CORRIGIDOS
+  // ✅ GET /api/users/:id/stats - COMPLETAMENTE CORRIGIDO
   // =========================================================
-
-  // GET /api/users/:id/stats
   getWorkerStats: async (req, res) => {
     try {
       const { id } = req.params;
@@ -284,7 +282,7 @@ const userController = {
         })
       ]);
 
-      // ✅ Cálculo do tempo médio - com NOT: NULL (CORRETO)
+      // ✅ Cálculo do tempo médio
       const records = await prisma.cleaningRecord.findMany({
         where: {
           cleanerId: id,
@@ -304,7 +302,6 @@ const userController = {
         avgDuration = Math.round(totalMinutes / records.length);
       }
 
-      // ✅ Última limpeza
       const lastCleaning = await prisma.cleaningRecord.findFirst({
         where: { cleanerId: id, status: 'COMPLETED' },
         orderBy: { completedAt: 'desc' },
@@ -333,7 +330,9 @@ const userController = {
     }
   },
 
-  // GET /api/users/:id/login-history
+  // =========================================================
+  // ✅ GET /api/users/:id/login-history - COMPLETAMENTE CORRIGIDO
+  // =========================================================
   getUserLoginHistory: async (req, res) => {
     try {
       const { id } = req.params;
@@ -352,7 +351,7 @@ const userController = {
         return res.status(404).json({ success: false, message: 'Usuário não encontrado' });
       }
 
-      // ✅ Buscar atividades de limpeza - com NOT: NULL (CORRETO)
+      // ✅ CORRIGIDO: APENAS UM orderBy!
       const cleaningHistory = await prisma.cleaningRecord.findMany({
         where: { 
           cleanerId: id, 
@@ -402,7 +401,9 @@ const userController = {
     }
   },
 
-  // GET /api/users/:id/performance
+  // =========================================================
+  // ✅ GET /api/users/:id/performance - MANTIDO
+  // =========================================================
   getWorkerPerformance: async (req, res) => {
     try {
       const { id } = req.params;
