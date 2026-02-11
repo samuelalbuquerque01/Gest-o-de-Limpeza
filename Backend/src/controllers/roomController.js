@@ -37,7 +37,6 @@ async function generateUniqueQrCode({ type, name, location }) {
  */
 async function generateQRImage(qrCode, roomData, req) {
   try {
-    // ✅ CORREÇÃO: URL QUE ABRE DIRETAMENTE NO FRONTEND
     const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
     const qrContent = `${frontendURL}/scan?roomId=${roomData.id}&qr=${encodeURIComponent(qrCode)}`;
     
@@ -82,7 +81,6 @@ const roomController = {
         });
       }
 
-      // ✅ ADICIONAR URL DO QR CODE (FRONTEND)
       const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const hasQRCode = !!(room.qrCode && room.qrCode.trim() !== '');
       const qrURL = hasQRCode ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null;
@@ -109,7 +107,7 @@ const roomController = {
     }
   },
 
-  // ✅ ESCANEAR QR CODE (WORKER)
+  // ✅ ESCANEAR QR CODE (WORKER) - VERSÃO CORRIGIDA
   scanQRCode: async (req, res) => {
     try {
       const { qrCode } = req.params;
@@ -125,8 +123,10 @@ const roomController = {
       console.log(`🔍 Escaneando QR Code: ${decodedQR.substring(0, 30)}...`);
 
       // Buscar sala pelo QR Code
-      const room = await prisma.room.findUnique({
-        where: { qrCode: decodedQR },
+      const room = await prisma.room.findFirst({
+        where: { 
+          qrCode: decodedQR
+        }
       });
 
       if (!room) {
@@ -140,14 +140,10 @@ const roomController = {
       console.log(`✅ Sala encontrada: ${room.name} (ID: ${room.id})`);
 
       // Verificar se há limpeza em andamento
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
       const activeCleaning = await prisma.cleaningRecord.findFirst({
         where: {
           roomId: room.id,
-          status: 'IN_PROGRESS',
-          startedAt: { gte: today }
+          status: 'IN_PROGRESS'
         },
         include: {
           cleaner: {
@@ -158,10 +154,7 @@ const roomController = {
 
       console.log(`📊 Status da sala: ${room.status}, Limpeza ativa: ${!!activeCleaning}`);
 
-      // ✅ URL para o frontend
-      const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
-      const scanURL = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}`;
-
+      // ✅ FORMATO CORRIGIDO - Frontend espera { success, room, isBeingCleaned, ... }
       return res.json({
         success: true,
         room: {
@@ -181,7 +174,6 @@ const roomController = {
         isBeingCleaned: !!activeCleaning,
         currentCleaner: activeCleaning?.cleaner || null,
         activeCleaningId: activeCleaning?.id || null,
-        scanURL: scanURL, // ✅ URL para abrir no frontend
         message: activeCleaning 
           ? `Esta sala está sendo limpa por ${activeCleaning.cleaner?.name || 'um funcionário'}.` 
           : 'Sala disponível para limpeza.',
@@ -220,7 +212,6 @@ const roomController = {
         });
       }
 
-      // Gerar novo QR Code único
       const newQRCode = await generateUniqueQrCode({
         type: room.type,
         name: room.name,
@@ -229,7 +220,6 @@ const roomController = {
 
       console.log(`✅ Novo QR Code gerado: ${newQRCode}`);
 
-      // Atualizar sala com novo QR Code
       const updatedRoom = await prisma.room.update({
         where: { id },
         data: { qrCode: newQRCode },
@@ -243,7 +233,6 @@ const roomController = {
         qrURL = qrData?.qrContent || null;
       }
 
-      // ✅ URL para o frontend
       const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const scanURL = `${frontendURL}/scan?roomId=${updatedRoom.id}&qr=${encodeURIComponent(newQRCode)}`;
 
@@ -252,10 +241,10 @@ const roomController = {
         message: 'Novo QR Code gerado com sucesso',
         qrCode: updatedRoom.qrCode,
         qrImage: qrImage,
-        qrURL: scanURL, // ✅ URL para o celular
+        qrURL: scanURL,
         room: updatedRoom,
         scanUrl: `/api/rooms/qr/${encodeURIComponent(newQRCode)}`,
-        redirectUrl: scanURL, // ✅ Mesma URL
+        redirectUrl: scanURL,
         downloadUrl: `/api/qr/download/${id}`,
         generatedAt: new Date().toISOString()
       });
@@ -303,7 +292,6 @@ const roomController = {
         orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
       });
 
-      // ✅ ADICIONAR URL DO QR CODE (FRONTEND)
       const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const roomsWithQRInfo = rooms.map(room => ({
         ...room,
@@ -348,7 +336,6 @@ const roomController = {
         });
       }
 
-      // ✅ Gera QR Code único automaticamente
       const qrCode = body.qrCode && String(body.qrCode).trim()
         ? String(body.qrCode).trim()
         : await generateUniqueQrCode({ type, name, location });
@@ -369,11 +356,9 @@ const roomController = {
       };
 
       const room = await prisma.room.create({ data });
-
-      // ✅ GERA IMAGEM DO QR CODE COM URL
+      
       const qrData = await generateQRImage(qrCode, room, req);
       
-      // ✅ URL para o frontend
       const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const scanURL = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(qrCode)}`;
 
@@ -386,7 +371,7 @@ const roomController = {
         room,
         qrCode: room.qrCode,
         qrImage: qrData?.qrImage || null,
-        qrURL: scanURL, // ✅ URL para escaneamento
+        qrURL: scanURL,
         scanUrl: `/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}`,
         generatedAt: new Date().toISOString()
       });
@@ -427,12 +412,10 @@ const roomController = {
         nextCleaning: body.nextCleaning !== undefined ? (body.nextCleaning ? new Date(body.nextCleaning) : null) : undefined,
       };
 
-      // Atualiza QR Code apenas se fornecido e não vazio
       if (body.qrCode !== undefined && String(body.qrCode).trim()) {
         data.qrCode = String(body.qrCode).trim();
       }
 
-      // Se solicitado, gerar novo QR Code
       if (body.generateNewQR === true) {
         const room = await prisma.room.findUnique({ where: { id } });
         if (room) {
@@ -452,7 +435,6 @@ const roomController = {
 
       console.log(`✅ Sala atualizada: ${room.name}`);
 
-      // ✅ GERAR NOVA URL PARA O FRONTEND
       const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const qrURL = room.qrCode ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null;
 
@@ -463,7 +445,7 @@ const roomController = {
         qrInfo: {
           hasQRCode: !!(room.qrCode && room.qrCode.trim() !== ''),
           scanUrl: room.qrCode ? `/api/rooms/qr/${encodeURIComponent(room.qrCode)}` : null,
-          qrURL: qrURL // ✅ URL para o frontend
+          qrURL: qrURL
         }
       });
     } catch (error) {
@@ -492,7 +474,6 @@ const roomController = {
 
       console.log(`🗑️  Deletando sala ID: ${id}`);
 
-      // Verificar se a sala existe
       const room = await prisma.room.findUnique({
         where: { id },
         include: {
@@ -511,7 +492,6 @@ const roomController = {
 
       console.log(`⚠️  Sala "${room.name}" tem ${room._count.cleaningRecords} registros de limpeza`);
 
-      // Deletar registros primeiro (pra não quebrar FK)
       await prisma.cleaningRecord.deleteMany({ where: { roomId: id } });
       await prisma.room.delete({ where: { id } });
 
@@ -549,7 +529,6 @@ const roomController = {
         orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
       });
 
-      // ✅ ADICIONAR URL DO QR CODE (FRONTEND)
       const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const roomsWithQR = rooms.map(room => ({
         ...room,
@@ -743,7 +722,6 @@ const roomController = {
 
       const hasQR = !!(room.qrCode && room.qrCode.trim() !== '');
       
-      // ✅ URL PARA O FRONTEND
       const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const qrURL = hasQR ? `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(room.qrCode)}` : null;
 
