@@ -397,98 +397,193 @@ const WorkerInterface = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // ======================================================================
-  // ✅ FUNÇÃO CORRIGIDA PARA PROCESSAR QR CODE SCAN - REDIRECIONAMENTO AUTOMÁTICO
-  // ======================================================================
-  const handleQRScanResult = async (qrText) => {
-    console.log("🔍 [WorkerInterface] QR Code escaneado:", qrText?.substring(0, 50));
-    setQrScannerOpen(false);
+// ======================================================================
+// ✅ FUNÇÃO CORRIGIDA PARA PROCESSAR QR CODE SCAN - VERSÃO 2.0
+// ======================================================================
+const handleQRScanResult = async (qrText) => {
+  console.log("🔍 [WorkerInterface] QR Code escaneado:", qrText?.substring(0, 50));
+  setQrScannerOpen(false);
+  
+  try {
+    setLoading(true);
+    setError("");
     
-    try {
-      setLoading(true);
-      setError("");
-      
-      let roomId = null;
-      let qrCode = null;
-      
-      // 📱 CASO 1: URL completa (formato: https://dominio.com/scan?roomId=xxx&qr=yyy)
-      if (typeof qrText === 'string' && (qrText.includes('http://') || qrText.includes('https://'))) {
-        try {
-          const url = new URL(qrText);
-          roomId = url.searchParams.get('roomId');
-          qrCode = url.searchParams.get('qr');
-          console.log("📱 URL parseada - roomId:", roomId, "qrCode:", qrCode?.substring(0, 20));
-        } catch (e) {
-          console.warn("⚠️ Erro ao parsear URL:", e);
+    let roomId = null;
+    let qrCode = null;
+    
+    // 📱 CASO 1: URL completa (formato: https://dominio.com/scan?roomId=xxx&qr=yyy)
+    if (typeof qrText === 'string' && (qrText.includes('http://') || qrText.includes('https://'))) {
+      try {
+        const url = new URL(qrText);
+        roomId = url.searchParams.get('roomId');
+        qrCode = url.searchParams.get('qr');
+        console.log("📱 URL parseada - roomId:", roomId, "qrCode:", qrCode?.substring(0, 20));
+      } catch (e) {
+        console.warn("⚠️ Erro ao parsear URL:", e);
+      }
+    }
+    
+    // 🔑 CASO 2: Apenas o código QR (formato: QR-TIPO-NOME-LOCAL-XXXX)
+    if (!roomId && typeof qrText === 'string' && qrText.startsWith('QR-')) {
+      qrCode = qrText;
+      console.log("🔑 QR Code puro:", qrCode?.substring(0, 30));
+    }
+    
+    // 📝 CASO 3: Se não conseguiu extrair, usar o texto inteiro como QR Code
+    if (!roomId && !qrCode && typeof qrText === 'string') {
+      qrCode = qrText;
+      console.log("📝 Usando texto completo como QR Code:", qrCode.substring(0, 30));
+    }
+    
+    // 🎯 Tentar buscar a sala
+    let room = null;
+    
+    // Tentativa 1: Buscar por QR Code (endpoint específico) - MAIS CONFIÁVEL
+    if (qrCode) {
+      try {
+        console.log(`🔍 Tentativa 1: Buscando sala por QR Code: ${qrCode.substring(0, 30)}...`);
+        const response = await api.get(`/rooms/qr/${encodeURIComponent(qrCode)}`);
+        console.log("📦 Resposta /rooms/qr/:qrCode:", response);
+        
+        // ✅ FORMATO CORRETO - O backend agora retorna { success, room, ... }
+        if (response?.success && response?.room) {
+          room = response.room;
+          console.log(`✅ Sala encontrada por QR Code: ${room.name} (${room.id})`);
         }
+      } catch (err) {
+        console.warn(`⚠️ Erro ao buscar por QR Code:`, err.message);
+        // Não retornar erro ainda, tentar outras opções
       }
-      
-      // 🔑 CASO 2: Apenas o código QR (formato: QR-TIPO-NOME-LOCAL-XXXX)
-      if (!roomId && typeof qrText === 'string' && qrText.startsWith('QR-')) {
-        qrCode = qrText;
-        console.log("🔑 QR Code puro:", qrCode?.substring(0, 30));
+    }
+    
+    // Tentativa 2: Buscar por roomId
+    if (!room && roomId) {
+      try {
+        console.log(`🔍 Tentativa 2: Buscando sala por ID: ${roomId}`);
+        const response = await api.get(`/rooms/${roomId}`);
+        
+        if (response?.success && response?.room) {
+          room = response.room;
+          console.log(`✅ Sala encontrada por ID: ${room.name}`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ Erro ao buscar por ID:`, err.message);
       }
-      
-      // 🎯 Tentar buscar a sala
-      let room = null;
-      
-      // Tentativa 1: Buscar por roomId
-      if (roomId) {
-        try {
-          console.log(`🔍 Buscando sala por ID: ${roomId}`);
-          const response = await api.get(`/rooms/${roomId}`);
-          if (response.success && response.room) {
-            room = response.room;
-            console.log(`✅ Sala encontrada por ID: ${room.name}`);
+    }
+    
+    // Tentativa 3: Buscar em todas as salas disponíveis (fallback)
+    if (!room && qrCode) {
+      try {
+        console.log(`🔍 Tentativa 3: Buscando em todas as salas por QR Code...`);
+        const allRoomsResponse = await api.get('/rooms/available');
+        
+        if (allRoomsResponse?.success && Array.isArray(allRoomsResponse.rooms)) {
+          room = allRoomsResponse.rooms.find(r => r.qrCode === qrCode);
+          if (room) {
+            console.log(`✅ Sala encontrada na lista geral: ${room.name}`);
           }
-        } catch (err) {
-          console.warn(`⚠️ Erro ao buscar por ID: ${err.message}`);
         }
+      } catch (err) {
+        console.warn(`⚠️ Erro na busca geral:`, err.message);
       }
-      
-      // Tentativa 2: Buscar por QR Code
-      if (!room && qrCode) {
-        try {
-          console.log(`🔍 Buscando sala por QR Code: ${qrCode.substring(0, 30)}...`);
-          const response = await api.get(`/rooms/qr/${encodeURIComponent(qrCode)}`);
-          
-          if (response.success) {
-            if (response.data?.room) {
-              room = response.data.room;
-              console.log(`✅ Sala encontrada por QR Code: ${room.name}`);
-            } else if (response.room) {
-              room = response.room;
-              console.log(`✅ Sala encontrada por QR Code (formato antigo): ${room.name}`);
-            }
-          }
-        } catch (err) {
-          console.warn(`⚠️ Erro ao buscar por QR Code: ${err.message}`);
-        }
-      }
-      
-      // Tentativa 3: Buscar em todas as salas disponíveis
-      if (!room && qrCode) {
-        try {
-          console.log(`🔍 Buscando em todas as salas por QR Code: ${qrCode.substring(0, 30)}...`);
-          const allRoomsResponse = await api.get('/rooms/available');
-          
-          if (allRoomsResponse.success && allRoomsResponse.rooms) {
-            room = allRoomsResponse.rooms.find(r => r.qrCode === qrCode);
-            if (room) {
-              console.log(`✅ Sala encontrada na lista geral: ${room.name}`);
-            }
-          }
-        } catch (err) {
-          console.warn(`⚠️ Erro na busca geral: ${err.message}`);
-        }
-      }
+    }
 
-      // ❌ Nenhuma sala encontrada
-      if (!room) {
-        setError("❌ QR Code não reconhecido. Sala não encontrada no sistema.");
+    // ❌ Nenhuma sala encontrada
+    if (!room) {
+      console.error("❌ Nenhuma sala encontrada para os dados:", { roomId, qrCode });
+      setError("❌ QR Code não reconhecido. Sala não encontrada no sistema.");
+      setLoading(false);
+      return;
+    }
+
+    console.log(`🎯 Sala identificada: ${room.name} (${room.id})`);
+
+    // 🚦 Verificar se a sala já está sendo limpa
+    try {
+      const activeResponse = await api.get('/cleaning/active');
+      
+      const isBeingCleaned = activeResponse?.success && 
+        Array.isArray(activeResponse.data) && 
+        activeResponse.data.some(cleaning => 
+          cleaning.roomId === room.id || cleaning.room?.id === room.id
+        );
+      
+      if (isBeingCleaned) {
+        setError(`⚠️ Esta sala já está sendo limpa por outro funcionário.`);
         setLoading(false);
         return;
       }
+    } catch (err) {
+      console.warn("⚠️ Não foi possível verificar limpeza ativa:", err);
+      // Continua mesmo sem verificar
+    }
+
+    // ✅ SALA ENCONTRADA - INICIAR LIMPEZA AUTOMATICAMENTE
+    console.log(`🚀 Iniciando limpeza para sala: ${room.name}`);
+    
+    try {
+      const startResponse = await cleaningService.startCleaning(room.id);
+      console.log("📦 Resposta cleaningService.startCleaning:", startResponse);
+      
+      if (startResponse?.success) {
+        // ✅ SUCESSO - Redirecionar para a tela de limpeza
+        const recordId = startResponse.record?.id || startResponse?.recordId;
+        setCleaningRecordId(recordId);
+        setActiveCleaning(startResponse.record);
+        setSelectedRoom(normalizeRoom(room));
+        
+        // Inicializar checklist
+        const items = CHECKLISTS[room.type] || CHECKLISTS.ROOM;
+        const initial = {};
+        (items || []).forEach((it) => (initial[it.id] = false));
+        setChecklist(initial);
+        setNotes("");
+        
+        // ✅ REDIRECIONAMENTO AUTOMÁTICO
+        setStep(3);
+        setActiveTab(1);
+        setSuccess(true);
+        
+        // Mostrar mensagem de sucesso
+        setTimeout(() => setSuccess(false), 3000);
+        
+        // Atualizar listas
+        fetchMyTodayCleanings();
+        fetchAllCleanings();
+        fetchRooms();
+        
+        console.log(`✅ Limpeza iniciada com sucesso! Protocolo: ${recordId}`);
+      } else {
+        // ⚠️ Verificar se já tem uma limpeza ativa
+        if (startResponse?.active?.id) {
+          setActiveCleaning(startResponse.active);
+          setCleaningRecordId(startResponse.active.id);
+          
+          const activeRoom = normalizeRoom(startResponse.active.room);
+          if (activeRoom) {
+            setSelectedRoom(activeRoom);
+            setChecklist(startResponse.active.checklist || {});
+            setNotes(startResponse.active.notes || "");
+            setStep(3);
+            setActiveTab(1);
+            setError("⚠️ Você já tem uma limpeza em andamento. Continuando...");
+          }
+        } else {
+          setError(startResponse?.message || startResponse?.error || "Erro ao iniciar limpeza");
+        }
+      }
+    } catch (startErr) {
+      console.error("🔥 Erro ao iniciar limpeza:", startErr);
+      setError(startErr?.message || startErr?.error || "Erro ao iniciar limpeza");
+    }
+    
+  } catch (err) {
+    console.error("🔥 Erro geral no processamento do QR Code:", err);
+    setError(err?.message || "Erro ao processar QR Code");
+  } finally {
+    setLoading(false);
+  }
+};
 
       console.log(`🎯 Sala identificada: ${room.name} (${room.id})`);
 
