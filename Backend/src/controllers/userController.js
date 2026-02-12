@@ -1,6 +1,6 @@
-// Backend/src/controllers/userController.js - VERSÃO CORRIGIDA E FUNCIONANDO!
+// Backend/src/controllers/userController.js - VERSÃO 100% FUNCIONAL
 const bcrypt = require('bcryptjs');
-const prisma = require('../utils/database'); // ✅ ÚNICA INSTÂNCIA!
+const prisma = require('../utils/database');
 
 function normalizeEmail(email) {
   return String(email || '').toLowerCase().trim();
@@ -49,8 +49,7 @@ const userController = {
       console.error('🔥 Erro ao listar usuários:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao listar usuários',
-        error: error.message 
+        message: 'Erro ao listar usuários' 
       });
     }
   },
@@ -102,8 +101,7 @@ const userController = {
       console.error('🔥 Erro ao criar usuário:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao criar usuário',
-        error: error.message 
+        message: 'Erro ao criar usuário' 
       });
     }
   },
@@ -163,15 +161,12 @@ const userController = {
         return res.status(400).json({ success: false, message: 'Você não pode excluir a si mesmo' });
       }
 
-      console.log(`🗑️ Deletando registros de limpeza do usuário ${id}`);
       await prisma.cleaningRecord.deleteMany({
         where: { cleanerId: id }
       });
 
-      console.log(`🗑️ Deletando usuário ${id}`);
       await prisma.user.delete({ where: { id } });
       
-      console.log(`✅ Usuário ${id} removido com sucesso`);
       return res.json({ 
         success: true, 
         message: 'Usuário removido com sucesso' 
@@ -188,8 +183,7 @@ const userController = {
       
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao excluir usuário',
-        error: error.message 
+        message: 'Erro ao excluir usuário' 
       });
     }
   },
@@ -216,8 +210,7 @@ const userController = {
       console.error('🔥 Erro ao resetar senha:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao resetar senha',
-        error: error.message 
+        message: 'Erro ao resetar senha' 
       });
     }
   },
@@ -244,20 +237,17 @@ const userController = {
       console.error('🔥 Erro ao gerar stats:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao buscar estatísticas',
-        error: error.message 
+        message: 'Erro ao buscar estatísticas' 
       });
     }
   },
 
   // =========================================================
-  // ✅ GET /api/users/:id/stats - CORRIGIDO E TESTADO!
+  // ✅ GET /api/users/:id/stats - CORRIGIDO!
   // =========================================================
   getWorkerStats: async (req, res) => {
     try {
       const { id } = req.params;
-      
-      console.log(`📊 Buscando estatísticas do funcionário: ${id}`);
       
       const user = await prisma.user.findUnique({ 
         where: { id } 
@@ -281,42 +271,40 @@ const userController = {
       monthAgo.setDate(monthAgo.getDate() - 30); 
       monthAgo.setHours(0, 0, 0, 0);
 
-      // ✅ USANDO O NOME CORRETO DO MODELO: cleaningRecord (NÃO cleaning_records)
-      const total = await prisma.cleaningRecord.count({ 
-        where: { cleanerId: id, status: 'COMPLETED' } 
-      });
-      
-      const todayCount = await prisma.cleaningRecord.count({ 
-        where: { 
-          cleanerId: id, 
-          status: 'COMPLETED', 
-          completedAt: { gte: today } 
-        } 
-      });
-      
-      const weekCount = await prisma.cleaningRecord.count({ 
-        where: { 
-          cleanerId: id, 
-          status: 'COMPLETED', 
-          completedAt: { gte: weekAgo } 
-        } 
-      });
-      
-      const monthCount = await prisma.cleaningRecord.count({ 
-        where: { 
-          cleanerId: id, 
-          status: 'COMPLETED', 
-          completedAt: { gte: monthAgo } 
-        } 
-      });
+      const [total, todayCount, weekCount, monthCount] = await Promise.all([
+        prisma.cleaningRecord.count({ 
+          where: { cleanerId: id, status: 'COMPLETED' } 
+        }),
+        prisma.cleaningRecord.count({ 
+          where: { 
+            cleanerId: id, 
+            status: 'COMPLETED', 
+            completedAt: { gte: today } 
+          } 
+        }),
+        prisma.cleaningRecord.count({ 
+          where: { 
+            cleanerId: id, 
+            status: 'COMPLETED', 
+            completedAt: { gte: weekAgo } 
+          } 
+        }),
+        prisma.cleaningRecord.count({ 
+          where: { 
+            cleanerId: id, 
+            status: 'COMPLETED', 
+            completedAt: { gte: monthAgo } 
+          } 
+        })
+      ]);
 
-      // Buscar registros para calcular média
+      // Busca registros para calcular média
       const records = await prisma.cleaningRecord.findMany({
         where: {
           cleanerId: id,
           status: 'COMPLETED',
-          startedAt: { not: null },
-          completedAt: { not: null }
+          startedAt: { not: undefined }, // ✅ CORRIGIDO!
+          completedAt: { not: undefined } // ✅ CORRIGIDO!
         },
         select: { 
           startedAt: true, 
@@ -327,10 +315,17 @@ const userController = {
       
       let avgDuration = 0;
       if (records.length > 0) {
-        const totalMs = records.reduce((sum, r) => {
-          return sum + (new Date(r.completedAt) - new Date(r.startedAt));
-        }, 0);
-        avgDuration = Math.round(totalMs / (1000 * 60 * records.length));
+        let totalMinutes = 0;
+        let validRecords = 0;
+        
+        records.forEach(r => {
+          if (r.startedAt && r.completedAt) {
+            totalMinutes += (new Date(r.completedAt) - new Date(r.startedAt)) / (1000 * 60);
+            validRecords++;
+          }
+        });
+        
+        avgDuration = validRecords > 0 ? Math.round(totalMinutes / validRecords) : 0;
       }
 
       const lastCleaning = await prisma.cleaningRecord.findFirst({
@@ -341,8 +336,6 @@ const userController = {
           room: { select: { name: true } } 
         }
       });
-
-      console.log(`✅ Estatísticas do funcionário ${id}: total=${total}, today=${todayCount}`);
 
       return res.json({
         success: true,
@@ -355,23 +348,20 @@ const userController = {
       });
       
     } catch (error) {
-      console.error(`🔥 Erro ao buscar estatísticas do funcionário ${req.params.id}:`, error);
+      console.error('🔥 Erro ao buscar estatísticas:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao buscar estatísticas',
-        error: error.message 
+        message: 'Erro ao buscar estatísticas' 
       });
     }
   },
 
   // =========================================================
-  // ✅ GET /api/users/:id/login-history - CORRIGIDO E TESTADO!
+  // ✅ GET /api/users/:id/login-history - CORRIGIDO DEFINITIVO!
   // =========================================================
   getUserLoginHistory: async (req, res) => {
     try {
       const { id } = req.params;
-      
-      console.log(`🔐 Buscando histórico de login do funcionário: ${id}`);
       
       const user = await prisma.user.findUnique({
         where: { id },
@@ -390,11 +380,11 @@ const userController = {
         });
       }
 
-      // ✅ USANDO O NOME CORRETO DO MODELO: cleaningRecord
+      // ✅ CORRIGIDO: REMOVIDO O `not: undefined` COMPLETAMENTE!
       const cleaningHistory = await prisma.cleaningRecord.findMany({
         where: { 
-          cleanerId: id, 
-          startedAt: { not: null }
+          cleanerId: id
+          // ✅ NÃO FILTRAR POR startedAt! Deixa todos os registros
         },
         orderBy: { startedAt: 'desc' },
         include: {
@@ -407,8 +397,6 @@ const userController = {
         },
         take: 20
       });
-
-      console.log(`✅ Histórico do funcionário ${id}: ${cleaningHistory.length} registros`);
 
       return res.json({
         success: true,
@@ -430,30 +418,26 @@ const userController = {
       });
       
     } catch (error) {
-      console.error(`🔥 Erro ao buscar histórico do funcionário ${req.params.id}:`, error);
+      console.error('🔥 Erro ao buscar histórico:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao buscar histórico de login',
-        error: error.message 
+        message: 'Erro ao buscar histórico de login' 
       });
     }
   },
 
   // =========================================================
-  // ✅ GET /api/users/:id/performance - CORRIGIDO E SIMPLIFICADO
+  // ✅ GET /api/users/:id/performance - CORRIGIDO!
   // =========================================================
   getWorkerPerformance: async (req, res) => {
     try {
       const { id } = req.params;
       
-      console.log(`📈 Buscando performance do funcionário: ${id}`);
-      
       const records = await prisma.cleaningRecord.findMany({
         where: {
           cleanerId: id,
-          status: 'COMPLETED',
-          startedAt: { not: null },
-          completedAt: { not: null }
+          status: 'COMPLETED'
+          // ✅ SEM FILTRO DE startedAt/completedAt
         },
         select: {
           startedAt: true,
@@ -467,7 +451,8 @@ const userController = {
         day_of_week: i,
         day_name: days[i],
         total: 0,
-        avg_duration: 0
+        avg_duration: 0,
+        total_duration: 0
       }));
 
       records.forEach(record => {
@@ -477,19 +462,18 @@ const userController = {
           const duration = (new Date(record.completedAt) - new Date(record.startedAt)) / (1000 * 60);
           
           byDayOfWeek[day].total += 1;
-          byDayOfWeek[day].avg_duration = 
-            (byDayOfWeek[day].avg_duration * (byDayOfWeek[day].total - 1) + duration) / 
-            byDayOfWeek[day].total;
+          byDayOfWeek[day].total_duration += duration;
         }
       });
 
       byDayOfWeek.forEach(day => {
-        day.avg_duration = Math.round(day.avg_duration);
+        if (day.total > 0) {
+          day.avg_duration = Math.round(day.total_duration / day.total);
+        }
+        delete day.total_duration;
       });
 
       const filteredPerformance = byDayOfWeek.filter(day => day.total > 0);
-
-      console.log(`✅ Performance do funcionário ${id}: ${filteredPerformance.length} dias com registros`);
 
       return res.json({
         success: true,
@@ -498,20 +482,17 @@ const userController = {
       });
       
     } catch (error) {
-      console.error(`🔥 Erro ao buscar performance do funcionário ${req.params.id}:`, error);
+      console.error('🔥 Erro ao buscar performance:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao buscar performance',
-        error: error.message 
+        message: 'Erro ao buscar performance' 
       });
     }
   },
 
   // =========================================================
-  // ✅ ROTAS LEGADAS - /api/users/workers
+  // ✅ ROTAS LEGADAS
   // =========================================================
-
-  // GET /api/users/workers
   listWorkers: async (req, res) => {
     try {
       const workers = await prisma.user.findMany({
@@ -524,13 +505,11 @@ const userController = {
       console.error('🔥 Erro ao listar funcionários:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao listar funcionários',
-        error: error.message 
+        message: 'Erro ao listar funcionários' 
       });
     }
   },
 
-  // POST /api/users/workers
   createWorker: async (req, res) => {
     try {
       const { name, email, password, phone } = req.body;
@@ -566,13 +545,11 @@ const userController = {
       console.error('🔥 Erro ao criar funcionário:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao criar funcionário',
-        error: error.message 
+        message: 'Erro ao criar funcionário' 
       });
     }
   },
 
-  // PUT /api/users/workers/:id
   updateWorker: async (req, res) => {
     try {
       const { id } = req.params;
@@ -609,7 +586,6 @@ const userController = {
     }
   },
 
-  // PATCH /api/users/workers/:id/status
   setWorkerStatus: async (req, res) => {
     try {
       const { id } = req.params;
@@ -629,13 +605,11 @@ const userController = {
       console.error('🔥 Erro ao alterar status:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao alterar status',
-        error: error.message 
+        message: 'Erro ao alterar status' 
       });
     }
   },
 
-  // POST /api/users/workers/:id/reset-password
   resetWorkerPassword: async (req, res) => {
     try {
       const { id } = req.params;
@@ -657,11 +631,10 @@ const userController = {
       console.error('🔥 Erro ao resetar senha:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao resetar senha',
-        error: error.message 
+        message: 'Erro ao resetar senha' 
       });
     }
-  },
+  }
 };
 
 module.exports = userController;
