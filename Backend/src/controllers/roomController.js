@@ -1,4 +1,4 @@
-// src/controllers/roomController.js - VERSÃO CORRIGIDA DEFINITIVA
+// src/controllers/roomController.js - VERSÃO ajustada atual
 const prisma = require('../utils/database'); // ✅ SINGLETON - NUNCA new PrismaClient()!
 const crypto = require("crypto");
 const QRCode = require('qrcode');

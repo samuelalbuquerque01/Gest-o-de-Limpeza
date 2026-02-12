@@ -1,4 +1,4 @@
-// src/controllers/cleaningController.js - VERSÃO CORRIGIDA DEFINITIVA
+// src/controllers/cleaningController.js - VERSÃO ajustada atual
 const prisma = require('../utils/database'); // ✅ SINGLETON - NUNCA new PrismaClient()!
 
 function startOfToday() {
@@ -7,9 +7,9 @@ function startOfToday() {
   return d;
 }
 
-// ======================================================================
-// ✅ CHECKLISTS CENTRALIZADOS
-// ======================================================================
+// ----
+//  CHECKLISTS CENTRALIZADOS
+// ----
 const CHECKLISTS = {
   ROOM: [
     { id: "floor", label: "Aspirar/limpar chão" },

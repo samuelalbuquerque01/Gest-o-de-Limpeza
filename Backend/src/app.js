@@ -19,9 +19,9 @@ const qrRoutes = require('./routes/qrRoutes');
 
 const app = express();
 
-// =======================
+// ----
 // Helpers
-// =======================
+// ----
 function safeUse(basePath, maybeRouter, name) {
   const isFn = typeof maybeRouter === 'function';
   if (!isFn) {
@@ -36,19 +36,19 @@ function safeUse(basePath, maybeRouter, name) {
   console.log(`âœ… Rotas carregadas: ${basePath} (${name})`);
 }
 
-// =======================
+// ----
 // Middlewares bÃ¡sicos
-// =======================
+// ----
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// =======================
+// ----
 // CORS (Render-proof)
 // - libera localhost (dev)
 // - libera seu domÃ­nio do Render
 // - libera qualquer *.onrender.com (se trocar subdomÃ­nio depois)
 // - nÃ£o joga erro 500 (retorna cb(null, false) em vez de throw)
-// =======================
+// ----
 const allowedOrigins = new Set([
   'http://localhost:3000',
   'http://localhost:3001',
@@ -89,9 +89,9 @@ app.use(
 // Preflight
 app.options('*', cors());
 
-// =======================
+// ----
 // Health
-// =======================
+// ----
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
@@ -126,9 +126,9 @@ app.get('/api/qr-test', (req, res) => {
   });
 });
 
-// =======================
+// ----
 // âœ… ROTAS DE REDIRECIONAMENTO QR CODE (ADICIONADAS)
-// =======================
+// ----
 
 // âœ… Rota de redirecionamento para QR Code
 app.get('/qr/redirect', async (req, res) => {
@@ -210,9 +210,9 @@ app.get('/qr/code/:code', async (req, res) => {
   }
 });
 
-// =======================
+// ----
 // Rotas API
-// =======================
+// ----
 safeUse('/api/auth', authRoutes, 'authRoutes');
 safeUse('/api/rooms', roomRoutes, 'roomRoutes');
 safeUse('/api/cleaning', cleaningRoutes, 'cleaningRoutes');
@@ -561,9 +561,9 @@ app.get('/api/qr/print/:roomId', async (req, res) => {
   }
 });
 
-// =======================
+// ----
 // âœ… SERVIR FRONTEND (React build)
-// =======================
+// ----
 const frontBuildPath = path.join(__dirname, '../../Front/build');
 app.use(express.static(frontBuildPath));
 
@@ -572,9 +572,9 @@ app.get(/^\/(?!api).*/, (req, res) => {
   res.sendFile(path.join(frontBuildPath, 'index.html'));
 });
 
-// =======================
+// ----
 // 404 (somente API)
-// =======================
+// ----
 app.use('/api', (req, res) => {
   res.status(404).json({
     success: false,

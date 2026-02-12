@@ -1,4 +1,4 @@
-// src/pages/Rooms.jsx - CÓDIGO COMPLETO CORRIGIDO
+// src/pages/Rooms.jsx - CÓimplementa??o atual
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
@@ -78,9 +78,9 @@ import { useAuth } from '../contexts/AuthContext';
 import roomService from '../services/roomService';
 import QRImageModal from '../components/common/QRImageModal'; // ✅ NOVO COMPONENTE
 
-// ---------------------------
+// ----
 // Modal de confirmação (delete)
-// ---------------------------
+// ----
 const DeleteConfirmationModal = ({ open, onClose, onConfirm, room }) => {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -132,9 +132,9 @@ const DeleteConfirmationModal = ({ open, onClose, onConfirm, room }) => {
   );
 };
 
-// ---------------------------
-// Modal QR (copiar + imprimir) - ✅ ATUALIZADO
-// ---------------------------
+// ----
+// Modal QR (copiar + imprimir) - ATUALIZADO
+// ----
 const QRModal = ({ open, onClose, room }) => {
   const [qrImage, setQrImage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -373,9 +373,9 @@ const QRModal = ({ open, onClose, room }) => {
   );
 };
 
-// ---------------------------
-// Página Rooms - ✅ ATUALIZADA
-// ---------------------------
+// ----
+// Página Rooms - ATUALIZADA
+// ----
 const Rooms = () => {
   const navigate = useNavigate();
   const { isAdmin } = useAuth();
@@ -400,7 +400,7 @@ const Rooms = () => {
 
   const [selectedRoom, setSelectedRoom] = useState(null);
 
-  // ✅ Estado da nova sala
+  //  Estado da nova sala
   const [newRoom, setNewRoom] = useState({
     name: '',
     type: 'ROOM',
@@ -492,22 +492,22 @@ const Rooms = () => {
     setSelectedRoom(null);
   };
 
-  // ✅ FUNÇÃO CORRIGIDA PARA SALVAR SALA
+  //  FUNÇÃO ajustada PARA SALVAR SALA
   const handleSaveRoom = async () => {
     try {
       setSubmitting(true);
       setError('');
 
-      // ✅ validação local
+      //  validação local
       if (!newRoom.name?.trim() || !newRoom.type?.trim() || !newRoom.location?.trim()) {
         setError('Preencha Nome, Tipo e Localização.');
         return;
       }
 
-      // ✅ Se não tiver QR Code, gera automaticamente
+      //  Se não tiver QR Code, gera automaticamente
       const qrCodeToSave = newRoom.qrCode?.trim() || generateQrCode();
 
-      // ✅ backend usa notes (não description)
+      //  backend usa notes (não description)
       const payload = {
         name: newRoom.name.trim(),
         type: newRoom.type,
@@ -527,7 +527,7 @@ const Rooms = () => {
       }
 
       if (response.success) {
-        // ✅ VERIFICA SE RETORNOU IMAGEM DO QR CODE
+        //  VERIFICA SE RETORNOU IMAGEM DO QR CODE
         if (response.qrImage) {
           console.log('✅ QR Code IMAGEM gerada com sucesso!');
           // Você pode exibir a imagem aqui se quiser

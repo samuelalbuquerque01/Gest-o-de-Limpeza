@@ -17,9 +17,9 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
-// =========================================================
-// ✅ ROTAS PRINCIPAIS - /api/users
-// =========================================================
+// ----
+//  Rotas principais - /api/users
+// ----
 router.get('/', authMiddleware, requireAdmin, userController.listUsers);
 router.post('/', authMiddleware, requireAdmin, userController.createUser);
 router.put('/:id', authMiddleware, requireAdmin, userController.updateUser);
@@ -27,16 +27,16 @@ router.delete('/:id', authMiddleware, requireAdmin, userController.deleteUser);
 router.post('/:id/reset-password', authMiddleware, requireAdmin, userController.resetPassword);
 router.get('/stats', authMiddleware, requireAdmin, userController.getStats);
 
-// =========================================================
-// ✅ NOVAS ROTAS - ESTATÍSTICAS DOS FUNCIONÁRIOS
-// =========================================================
+// ----
+//  Rotas novas - ESTATÍSTICAS DOS FUNCIONÁRIOS
+// ----
 router.get('/:id/stats', authMiddleware, requireAdmin, userController.getWorkerStats);
 router.get('/:id/login-history', authMiddleware, requireAdmin, userController.getUserLoginHistory);
 router.get('/:id/performance', authMiddleware, requireAdmin, userController.getWorkerPerformance);
 
-// =========================================================
-// ✅ ROTAS LEGADAS - /api/users/workers
-// =========================================================
+// ----
+//  Rotas legadas - /api/users/workers
+// ----
 router.get('/workers', authMiddleware, requireAdmin, userController.listWorkers);
 router.post('/workers', authMiddleware, requireAdmin, userController.createWorker);
 router.put('/workers/:id', authMiddleware, requireAdmin, userController.updateWorker);

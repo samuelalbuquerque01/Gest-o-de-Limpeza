@@ -1,4 +1,4 @@
-// config.js - VERSÃO COMPLETA E CORRIGIDA
+// config.js - VERSÃO COMPLETA E ajustada
 require('dotenv').config();
 
 console.log('🔧 Carregando configurações do sistema...');

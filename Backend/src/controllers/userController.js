@@ -242,9 +242,9 @@ const userController = {
     }
   },
 
-  // =========================================================
-  // ✅ GET /api/users/:id/stats - CORRIGIDO!
-  // =========================================================
+  // ----
+  //  GET /api/users/:id/stats - ajustado!
+  // ----
   getWorkerStats: async (req, res) => {
     try {
       const { id } = req.params;
@@ -356,9 +356,9 @@ const userController = {
     }
   },
 
-  // =========================================================
-  // ✅ GET /api/users/:id/login-history - CORRIGIDO DEFINITIVO!
-  // =========================================================
+  // ----
+  //  GET /api/users/:id/login-history - ajuste final!
+  // ----
   getUserLoginHistory: async (req, res) => {
     try {
       const { id } = req.params;
@@ -380,11 +380,11 @@ const userController = {
         });
       }
 
-      // ✅ CORRIGIDO: REMOVIDO O `not: undefined` COMPLETAMENTE!
+      //  ajustado: REMOVIDO O `not: undefined` COMPLETAMENTE!
       const cleaningHistory = await prisma.cleaningRecord.findMany({
         where: { 
           cleanerId: id
-          // ✅ NÃO FILTRAR POR startedAt! Deixa todos os registros
+          //  NÃO FILTRAR POR startedAt! Deixa todos os registros
         },
         orderBy: { startedAt: 'desc' },
         include: {
@@ -426,9 +426,9 @@ const userController = {
     }
   },
 
-  // =========================================================
-  // ✅ GET /api/users/:id/performance - CORRIGIDO!
-  // =========================================================
+  // ----
+  //  GET /api/users/:id/performance - ajustado!
+  // ----
   getWorkerPerformance: async (req, res) => {
     try {
       const { id } = req.params;
@@ -437,7 +437,7 @@ const userController = {
         where: {
           cleanerId: id,
           status: 'COMPLETED'
-          // ✅ SEM FILTRO DE startedAt/completedAt
+          //  SEM FILTRO DE startedAt/completedAt
         },
         select: {
           startedAt: true,
@@ -490,9 +490,9 @@ const userController = {
     }
   },
 
-  // =========================================================
-  // ✅ ROTAS LEGADAS
-  // =========================================================
+  // ----
+  //  Rotas legadas
+  // ----
   listWorkers: async (req, res) => {
     try {
       const workers = await prisma.user.findMany({

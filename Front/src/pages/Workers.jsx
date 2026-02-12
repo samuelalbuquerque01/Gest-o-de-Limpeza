@@ -76,25 +76,25 @@ const Workers = () => {
     }
   }, [user]);
 
-  // ======================================================================
-  // ✅ FUNÇÃO CORRIGIDA - Busca funcionários + estatísticas REAIS
-  // ======================================================================
+  // ----
+  //  FUNÇÃO ajustada - Busca funcionários + estatísticas REAIS
+  // ----
   const fetchWorkers = async () => {
     try {
       setLoading(true);
       setError('');
 
-      // ✅ 1. Buscar TODOS os usuários
+      //  1. Buscar TODOS os usuários
       const response = await userService.getUsers();
       
       if (response.success) {
         const allUsers = response.data || [];
         
-        // ✅ 2. Para cada funcionário, buscar estatísticas reais
+        //  2. Para cada funcionário, buscar estatísticas reais
         const workersWithStats = await Promise.all(
           allUsers.map(async (worker) => {
             try {
-              // ✅ CORRIGIDO: userService.getWorkerStats (NÃO cleaningService)
+              //  ajustado: userService.getWorkerStats (NÃO cleaningService)
               const statsResponse = await userService.getWorkerStats(worker.id);
               const loginHistory = await userService.getUserLoginHistory(worker.id);
               
@@ -132,7 +132,7 @@ const Workers = () => {
 
         setWorkers(workersWithStats);
         
-        // ✅ 3. Calcular estatísticas gerais
+        //  3. Calcular estatísticas gerais
         const stats = {
           total: workersWithStats.length,
           active: workersWithStats.filter(w => w.status === 'ACTIVE').length,

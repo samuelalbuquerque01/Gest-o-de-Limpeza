@@ -1,9 +1,9 @@
 import api from './api';
 
 const userService = {
-  // =========================================================
-  // ✅ MÉTODO PRINCIPAL - FALTANDO!
-  // =========================================================
+  // ----
+  // Metodo principal do servico
+  // ----
   getUsers: async (params = {}) => {
     try {
       console.log('📥 [userService] Buscando usuários...');
@@ -26,9 +26,9 @@ const userService = {
     }
   },
 
-  // =========================================================
-  // ✅ MÉTODOS DE CRUD
-  // =========================================================
+  // ----
+  //  MÉTODOS DE CRUD
+  // ----
   createUser: async (userData) => {
     try {
       console.log('📤 [userService] Criando usuário:', userData);
@@ -119,9 +119,9 @@ const userService = {
     }
   },
 
-  // =========================================================
-  // ✅ NOVOS MÉTODOS - ESTATÍSTICAS DOS FUNCIONÁRIOS
-  // =========================================================
+  // ----
+  //  NOVOS MÉTODOS - ESTATÍSTICAS DOS FUNCIONÁRIOS
+  // ----
   getWorkerStats: async (userId) => {
     try {
       console.log(`📊 [userService] Buscando estatísticas do funcionário ${userId}`);

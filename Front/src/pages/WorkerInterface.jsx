@@ -1,4 +1,4 @@
-// src/pages/WorkerInterface.jsx - VERSÃO COMPLETA CORRIGIDA
+// src/pages/WorkerInterface.jsx - VERSÃO COMPLETA ajustada
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Container,
@@ -96,7 +96,7 @@ import roomService from "../services/roomService";
 import api from "../services/api";
 import QRScanner from "../components/common/QRScanner";
 
-// ✅ logo local
+//  logo local
 import logo from "../assets/logo.png";
 
 // Checklists por tipo de sala
@@ -188,29 +188,29 @@ const WorkerInterface = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  // ✅ QR Scanner state
+  //  QR Scanner state
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
 
-  // ✅ protocolo = recordId (id do registro no backend)
+  //  protocolo = recordId (id do registro no backend)
   const [cleaningRecordId, setCleaningRecordId] = useState(null);
   const [todayCleanings, setTodayCleanings] = useState([]);
   const [allCleanings, setAllCleanings] = useState([]);
   const [activeCleaning, setActiveCleaning] = useState(null);
 
-  // ✅ Modal de visualização de comprovante
+  //  Modal de visualização de comprovante
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [receiptQRCode, setReceiptQRCode] = useState("");
 
-  // ✅ Filtros para histórico
+  //  Filtros para histórico
   const [dateFilter, setDateFilter] = useState("today");
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
 
-  // ✅ Menu de ações
+  //  Menu de ações
   const [anchorEl, setAnchorEl] = useState(null);
 
-  // ✅ Verifica autenticação
+  //  Verifica autenticação
   useEffect(() => {
     if (!user) {
       navigate("/worker/login", { replace: true });
@@ -266,7 +266,7 @@ const WorkerInterface = () => {
     setChecklist(initial);
   };
 
-  // ✅ Carrega salas disponíveis
+  //  Carrega salas disponíveis
   const fetchRooms = async () => {
     try {
       setLoading(true);
@@ -281,7 +281,7 @@ const WorkerInterface = () => {
     }
   };
 
-  // ✅ Histórico do funcionário logado hoje
+  //  Histórico do funcionário logado hoje
   const fetchMyTodayCleanings = async () => {
     try {
       setHistoryLoading(true);
@@ -303,7 +303,7 @@ const WorkerInterface = () => {
     }
   };
 
-  // ✅ Histórico completo (últimos 30 dias)
+  //  Histórico completo (últimos 30 dias)
   const fetchAllCleanings = async () => {
     try {
       setStatsLoading(true);
@@ -324,7 +324,7 @@ const WorkerInterface = () => {
     }
   };
 
-  // ✅ Estatísticas do funcionário
+  //  Estatísticas do funcionário
   const calculateStats = () => {
     const today = todayCleanings || [];
     const all = allCleanings || [];
@@ -358,7 +358,7 @@ const WorkerInterface = () => {
     };
   };
 
-  // ✅ Checa limpeza ativa (pra retomar)
+  //  Checa limpeza ativa (pra retomar)
   const checkActiveCleaning = async () => {
     try {
       const response = await cleaningService.getMyActiveCleaning();
@@ -383,7 +383,7 @@ const WorkerInterface = () => {
     }
   };
 
-  // ✅ Boot
+  //  Boot
   useEffect(() => {
     if (!user) return;
 
@@ -397,9 +397,9 @@ const WorkerInterface = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // ======================================================================
-  // ✅ FUNÇÃO CORRIGIDA PARA PROCESSAR QR CODE SCAN - VERSÃO ÚNICA E CORRETA
-  // ======================================================================
+  // ----
+  //  FUNÇÃO ajustada PARA PROCESSAR QR CODE SCAN - VERSÃO ÚNICA E CORRETA
+  // ----
   const handleQRScanResult = async (qrText) => {
     console.log("🔍 [WorkerInterface] QR Code escaneado:", qrText?.substring(0, 50));
     setQrScannerOpen(false);
@@ -435,7 +435,7 @@ const WorkerInterface = () => {
         console.log("📝 Usando texto completo como QR Code:", qrCode.substring(0, 30));
       }
       
-      // 🎯 Tentar buscar a sala
+      //  Tentar buscar a sala
       let room = null;
       
       // Tentativa 1: Buscar por QR Code (endpoint específico) - MAIS CONFIÁVEL
@@ -445,7 +445,7 @@ const WorkerInterface = () => {
           const response = await api.get(`/rooms/qr/${encodeURIComponent(qrCode)}`);
           console.log("📦 Resposta /rooms/qr/:qrCode:", response);
           
-          // ✅ FORMATO CORRETO - O backend agora retorna { success, room, ... }
+          //  FORMATO CORRETO - O backend agora retorna { success, room, ... }
           if (response?.success && response?.room) {
             room = response.room;
             console.log(`✅ Sala encontrada por QR Code: ${room.name} (${room.id})`);
@@ -518,7 +518,7 @@ const WorkerInterface = () => {
         // Continua mesmo sem verificar
       }
 
-      // ✅ SALA ENCONTRADA - INICIAR LIMPEZA AUTOMATICAMENTE
+      //  SALA ENCONTRADA - INICIAR LIMPEZA AUTOMATICAMENTE
       console.log(`🚀 Iniciando limpeza para sala: ${room.name}`);
       
       try {
@@ -526,7 +526,7 @@ const WorkerInterface = () => {
         console.log("📦 Resposta cleaningService.startCleaning:", startResponse);
         
         if (startResponse?.success) {
-          // ✅ SUCESSO - Redirecionar para a tela de limpeza
+          //  SUCESSO - Redirecionar para a tela de limpeza
           const recordId = startResponse.record?.id || startResponse?.recordId;
           setCleaningRecordId(recordId);
           setActiveCleaning(startResponse.record);
@@ -539,7 +539,7 @@ const WorkerInterface = () => {
           setChecklist(initial);
           setNotes("");
           
-          // ✅ REDIRECIONAMENTO AUTOMÁTICO
+          //  REDIRECIONAMENTO AUTOMÁTICO
           setStep(3);
           setActiveTab(1);
           setSuccess(true);
@@ -554,7 +554,7 @@ const WorkerInterface = () => {
           
           console.log(`✅ Limpeza iniciada com sucesso! Protocolo: ${recordId}`);
         } else {
-          // ⚠️ Verificar se já tem uma limpeza ativa
+          //  Verificar se já tem uma limpeza ativa
           if (startResponse?.active?.id) {
             setActiveCleaning(startResponse.active);
             setCleaningRecordId(startResponse.active.id);
@@ -642,7 +642,7 @@ const WorkerInterface = () => {
     }
   };
 
-  // ✅ Função para visualizar comprovante
+  //  Função para visualizar comprovante
   const handleViewReceipt = async (cleaning) => {
     try {
       setSelectedReceipt(cleaning);
@@ -767,7 +767,7 @@ const WorkerInterface = () => {
     fetchAllCleanings();
   };
 
-  // ✅ Modal de visualização de comprovante
+  //  Modal de visualização de comprovante
   const renderReceiptModal = () => {
     if (!selectedReceipt) return null;
 
@@ -1004,7 +1004,7 @@ const WorkerInterface = () => {
     );
   };
 
-  // ✅ Render Dashboard
+  //  Render Dashboard
   const renderDashboard = () => {
     const stats = calculateStats();
     
@@ -1262,7 +1262,7 @@ const WorkerInterface = () => {
     );
   };
 
-  // ✅ Render Nova Limpeza
+  //  Render Nova Limpeza
   const renderNewCleaning = () => {
     if (step === 2) {
       return (
@@ -1660,7 +1660,7 @@ const WorkerInterface = () => {
     return null;
   };
 
-  // ✅ Render Histórico Completo
+  //  Render Histórico Completo
   const renderHistory = () => {
     const filteredCleanings = allCleanings.filter(cleaning => {
       if (statusFilter !== 'all' && cleaning.status !== statusFilter) return false;
@@ -1809,7 +1809,7 @@ const WorkerInterface = () => {
     );
   };
 
-  // ✅ Render Estatísticas Detalhadas
+  //  Render Estatísticas Detalhadas
   const renderStatistics = () => {
     const stats = calculateStats();
     
@@ -1925,7 +1925,7 @@ const WorkerInterface = () => {
     );
   };
 
-  // ✅ Render Comprovantes (APENAS VISUALIZAÇÃO)
+  //  Render Comprovantes (APENAS VISUALIZAÇÃO)
   const renderReceiptsView = () => {
     const completedCleanings = allCleanings
       .filter(c => c.status === 'COMPLETED')
@@ -2035,7 +2035,7 @@ const WorkerInterface = () => {
     );
   };
 
-  // ✅ Render conteúdo baseado na aba ativa
+  //  Render conteúdo baseado na aba ativa
   const renderContent = () => {
     if (!user) {
       return <Alert severity="warning">Faça login como funcionário para continuar.</Alert>;
@@ -2057,7 +2057,7 @@ const WorkerInterface = () => {
     }
   };
 
-  // ✅ Função de LOGOUT
+  //  Função de LOGOUT
   const handleLogout = async () => {
     try {
       await logout();

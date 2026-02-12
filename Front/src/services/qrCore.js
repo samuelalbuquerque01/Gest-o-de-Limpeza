@@ -1,9 +1,9 @@
-// src/services/qrCore.js - SERVIÇO ÚNICO E DEFINITIVO
+// src/services/qrCore.js - servico principal de QR Code
 import api from './api';
 import QRCode from 'qrcode';
 
 /**
- * 🎯 SERVIÇO CENTRALIZADO DE QR CODE
+ *  SERVIÇO CENTRALIZADO DE QR CODE
  * ÚNICO lugar que deve conter lógica de QR Code
  */
 class QrCoreService {
@@ -12,7 +12,7 @@ class QrCoreService {
   }
 
   /**
-   * ✅ GERA A URL PADRÃO DO QR CODE
+   *  GERA A URL PADRÃO DO QR CODE
    * TODOS os QR Codes usam este formato
    */
   generateRoomUrl(room) {
@@ -22,7 +22,7 @@ class QrCoreService {
   }
 
   /**
-   * ✅ GERA URL PARA CHECK-IN DE FUNCIONÁRIO
+   *  GERA URL PARA CHECK-IN DE FUNCIONÁRIO
    */
   generateUserUrl(user) {
     if (!user?.id) throw new Error('Usuário inválido');
@@ -30,7 +30,7 @@ class QrCoreService {
   }
 
   /**
-   * ✅ GERA IMAGEM DO QR CODE VIA BACKEND (RECOMENDADO)
+   *  GERA IMAGEM DO QR CODE VIA BACKEND (RECOMENDADO)
    * Usa o endpoint que já está funcionando perfeitamente
    */
   async generateViaBackend(roomId, options = {}) {
@@ -61,7 +61,7 @@ class QrCoreService {
   }
 
   /**
-   * ✅ GERA QR CODE LOCALMENTE (APENAS FALLBACK)
+   *  GERA QR CODE LOCALMENTE (APENAS FALLBACK)
    * Usado apenas quando backend está indisponível
    */
   async generateLocal(room) {
@@ -91,7 +91,7 @@ class QrCoreService {
   }
 
   /**
-   * ✅ GERA QR CODE (AUTOMÁTICO - TENTA BACKEND, FALLBACK LOCAL)
+   *  GERA QR CODE (AUTOMÁTICO - TENTA BACKEND, FALLBACK LOCAL)
    */
   async generateQRCode(room, options = {}) {
     // Tenta backend primeiro
@@ -104,7 +104,7 @@ class QrCoreService {
   }
 
   /**
-   * ✅ BAIXA QR CODE VIA BACKEND
+   *  BAIXA QR CODE VIA BACKEND
    */
   async downloadQRCode(roomId, roomName, format = 'png') {
     try {
@@ -136,7 +136,7 @@ class QrCoreService {
   }
 
   /**
-   * ✅ IMPRIME QR CODE
+   *  IMPRIME QR CODE
    */
   async printQRCode(roomId) {
     try {
@@ -172,7 +172,7 @@ class QrCoreService {
   }
 
   /**
-   * ✅ GERA LOTE DE QR CODES
+   *  GERA LOTE DE QR CODES
    */
   async generateBatch(roomIds) {
     try {
@@ -193,7 +193,7 @@ class QrCoreService {
   }
 
   /**
-   * ✅ VALIDA QR CODE
+   *  VALIDA QR CODE
    */
   async validateQRCode(qrCode) {
     try {
@@ -209,7 +209,7 @@ class QrCoreService {
   }
 
   /**
-   * ✅ ESCANEA QR CODE (ENDPOINT ESPECÍFICO)
+   *  ESCANEA QR CODE (ENDPOINT ESPECÍFICO)
    */
   async scanQRCode(qrCode) {
     try {
@@ -231,6 +231,6 @@ class QrCoreService {
   }
 }
 
-// ✅ EXPORTA INSTÂNCIA ÚNICA (SINGLETON)
+//  EXPORTA INSTÂNCIA ÚNICA (SINGLETON)
 const qrCore = new QrCoreService();
 export default qrCore;

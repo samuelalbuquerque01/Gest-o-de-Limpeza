@@ -69,9 +69,9 @@ async function validateLogin(loginEmail, password) {
 }
 
 const authController = {
-  // =========================================================
-  // ✅ ADMIN LOGIN
-  // =========================================================
+  // ----
+  //  ADMIN LOGIN
+  // ----
   loginAdmin: async (req, res) => {
     try {
       const { email, password } = req.body || {};
@@ -98,7 +98,7 @@ const authController = {
         return res.status(403).json({ success: false, message: "Usuário inativo" });
       }
 
-      // ✅ ATUALIZAR ÚLTIMO LOGIN
+      //  ATUALIZAR ÚLTIMO LOGIN
       await prisma.user.update({
         where: { id: user.id },
         data: { lastLogin: new Date() }
@@ -120,9 +120,9 @@ const authController = {
     }
   },
 
-  // =========================================================
-  // ✅ WORKER LOGIN
-  // =========================================================
+  // ----
+  //  WORKER LOGIN
+  // ----
   loginWorker: async (req, res) => {
     try {
       const { email, identifier, password } = req.body || {};
@@ -150,7 +150,7 @@ const authController = {
         return res.status(403).json({ success: false, message: "Funcionário inativo" });
       }
 
-      // ✅ ATUALIZAR ÚLTIMO LOGIN
+      //  ATUALIZAR ÚLTIMO LOGIN
       await prisma.user.update({
         where: { id: user.id },
         data: { lastLogin: new Date() }
@@ -172,9 +172,9 @@ const authController = {
     }
   },
 
-  // =========================================================
-  // ✅ ME (perfil)
-  // =========================================================
+  // ----
+  //  ME (perfil)
+  // ----
   me: async (req, res) => {
     try {
       const authHeader = req.headers.authorization || "";
@@ -201,9 +201,9 @@ const authController = {
     }
   },
 
-  // =========================================================
-  // ✅ NOVO ENDPOINT - HISTÓRICO DE LOGIN DO USUÁRIO ATUAL
-  // =========================================================
+  // ----
+  //  NOVO ENDPOINT - HISTÓRICO DE LOGIN DO USUÁRIO ATUAL
+  // ----
   getMyLoginHistory: async (req, res) => {
     try {
       const userId = req.user?.id;

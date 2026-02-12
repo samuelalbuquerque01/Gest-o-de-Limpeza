@@ -167,7 +167,7 @@ const QRScanner = ({ open, onClose, onScan, scanning: externalScanning }) => {
           
           // Não fechar automaticamente - deixar a página pai controlar
           // if (onClose) {
-          //   onClose();
+          //  onClose();
           // }
         }, 500);
         

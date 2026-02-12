@@ -7,9 +7,9 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Rodando seed...');
 
-  // =========================
+  // ----
   // ADMIN
-  // =========================
+  // ----
   const adminEmail = 'manutencao@neuropsicocentro.com.br';
   const adminPassword = await bcrypt.hash('senha123', 10);
 
@@ -32,9 +32,9 @@ async function main() {
 
   console.log('✅ Admin OK:', admin.email);
 
-  // =========================
+  // ----
   // WORKER / CLEANER
-  // =========================
+  // ----
   const workerEmail = 'funcionario@limpeza.com';
   const workerPassword = await bcrypt.hash('123456', 10);
 

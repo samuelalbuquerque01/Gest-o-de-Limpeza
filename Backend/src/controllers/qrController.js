@@ -1,11 +1,11 @@
-// src/controllers/qrController.js - VERSÃO COMPLETA CORRIGIDA
+// src/controllers/qrController.js - VERSÃO COMPLETA ajustada
 const QRCode = require('qrcode');
 const prisma = require('../utils/database');
 const crypto = require('crypto');
 
 class QRController {
   /**
-   * ✅ GERAR QR CODE PARA SALA (COM URL QUE ABRE NO CELULAR)
+   *  GERAR QR CODE PARA SALA (COM URL QUE ABRE NO CELULAR)
    * POST /api/qr/generate/:roomId
    */
   static async generateQRCode(req, res) {
@@ -47,7 +47,7 @@ class QRController {
         console.log(`✅ QR Code gerado: ${qrCode}`);
       }
 
-      // ✅✅✅ CORREÇÃO PRINCIPAL: URL QUE VAI DENTRO DO QR CODE
+      //  CORREÇÃO PRINCIPAL: URL QUE VAI DENTRO DO QR CODE
       const frontendURL = process.env.FRONTEND_URL || 'https://gest-o-de-limpeza.onrender.com';
       const qrContent = `${frontendURL}/scan?roomId=${room.id}&qr=${encodeURIComponent(qrCode)}`;
       
@@ -101,7 +101,7 @@ class QRController {
   }
 
   /**
-   * ✅ GERAR QR CODE ÚNICO
+   *  GERAR QR CODE ÚNICO
    */
   static generateUniqueQRCode(room) {
     const cleanName = room.name
@@ -130,7 +130,7 @@ class QRController {
   }
 
   /**
-   * ✅ DOWNLOAD QR CODE COM URL
+   *  DOWNLOAD QR CODE COM URL
    */
   static async downloadQRCode(req, res) {
     try {
@@ -207,7 +207,7 @@ class QRController {
   }
 
   /**
-   * ✅ VALIDAR QR CODE
+   *  VALIDAR QR CODE
    */
   static async validateQRCode(req, res) {
     try {
@@ -297,7 +297,7 @@ class QRController {
   }
 
   /**
-   * ✅ GERAR QR CODE PARA FUNCIONÁRIO
+   *  GERAR QR CODE PARA FUNCIONÁRIO
    */
   static async generateUserQRCode(req, res) {
     try {
@@ -354,7 +354,7 @@ class QRController {
   }
 
   /**
-   * ✅ DOWNLOAD QR CODE DE FUNCIONÁRIO
+   *  DOWNLOAD QR CODE DE FUNCIONÁRIO
    */
   static async downloadUserQRCode(req, res) {
     try {
@@ -423,7 +423,7 @@ class QRController {
   }
 
   /**
-   * ✅ GERAR QR CODES EM LOTE
+   *  GERAR QR CODES EM LOTE
    */
   static async generateBatchQRCodes(req, res) {
     try {
@@ -503,7 +503,7 @@ class QRController {
   }
 
   /**
-   * ✅ GERAR QR CODES FALTANTES
+   *  GERAR QR CODES FALTANTES
    */
   static async generateMissingQRCodes(req, res) {
     try {
@@ -580,7 +580,7 @@ class QRController {
   }
 
   /**
-   * ✅ RELATÓRIO DE QR CODES
+   *  RELATÓRIO DE QR CODES
    */
   static async generateQRReport(req, res) {
     try {
@@ -653,7 +653,7 @@ class QRController {
   }
 
   /**
-   * ✅ OBTER SALA POR QR CODE (FUNÇÃO FALTANTE QUE CAUSA O ERRO)
+   *  OBTER SALA POR QR CODE (FUNÇÃO FALTANTE QUE CAUSA O ERRO)
    * GET /api/rooms/qr/:qrCode
    */
   static async getRoomByQRCode(req, res) {
@@ -762,5 +762,5 @@ class QRController {
   }
 }
 
-// ✅ EXPORTE CORRETO COM TODAS AS FUNÇÕES
+//  EXPORTE CORRETO COM TODAS AS FUNÇÕES
 module.exports = QRController;

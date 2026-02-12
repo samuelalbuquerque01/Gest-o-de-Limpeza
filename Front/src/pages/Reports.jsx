@@ -28,7 +28,7 @@ import { TrendingUp, Assessment, Timer, Download, Print, Refresh, EmojiEvents, C
 import { format } from "date-fns";
 import reportService from "../services/reportService";
 
-// ✅ logo local (sem CORS)
+//  logo local (sem CORS)
 import logoPng from "../assets/logo.png";
 
 export default function Reports() {
@@ -118,9 +118,9 @@ export default function Reports() {
     }
   };
 
-  // -----------------------------
-  // ✅ CSV (dados)
-  // -----------------------------
+  // ----
+  //  CSV (dados)
+  // ----
   const buildCsv = (data) => {
     const lines = [];
     const push = (arr) =>
@@ -180,9 +180,9 @@ export default function Reports() {
     window.URL.revokeObjectURL(url);
   };
 
-  // -----------------------------
-  // ✅ PDF (print bonito)
-  // -----------------------------
+  // ----
+  //  PDF (print bonito)
+  // ----
   const toDataUrl = async (assetUrl) => {
     const resp = await fetch(assetUrl);
     const blob = await resp.blob();
