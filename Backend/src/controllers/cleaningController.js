@@ -1,6 +1,5 @@
-// src/controllers/cleaningController.js - VERSÃO CORRIGIDA COM VALIDAÇÃO
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+// src/controllers/cleaningController.js - VERSÃO CORRIGIDA DEFINITIVA
+const prisma = require('../utils/database'); // ✅ SINGLETON - NUNCA new PrismaClient()!
 
 function startOfToday() {
   const d = new Date();
@@ -9,7 +8,7 @@ function startOfToday() {
 }
 
 // ======================================================================
-// ✅ CHECKLISTS CENTRALIZADOS (mesmo do frontend)
+// ✅ CHECKLISTS CENTRALIZADOS
 // ======================================================================
 const CHECKLISTS = {
   ROOM: [
@@ -43,31 +42,22 @@ const CHECKLISTS = {
   ]
 };
 
-// ======================================================================
-// ✅ FUNÇÃO DE VALIDAÇÃO DE CHECKLIST - RISCO #3 ELIMINADO!
-// ======================================================================
 function validateChecklist(roomType, checklist) {
-  // Se não tem checklist, reprova
   if (!checklist || typeof checklist !== 'object') {
     throw new Error('Checklist é obrigatório');
   }
 
-  // Pega os itens obrigatórios para este tipo de sala
   const requiredItems = CHECKLISTS[roomType] || CHECKLISTS.ROOM;
   const totalRequired = requiredItems.length;
   
-  // Conta quantos itens foram marcados como true
   const completedItems = Object.values(checklist).filter(Boolean).length;
   
-  // LOG para auditoria
   console.log(`📋 Validação de checklist - Sala: ${roomType}, Completados: ${completedItems}/${totalRequired}`);
   
-  // ✅ REGRA: 100% dos itens devem estar marcados!
   if (completedItems < totalRequired) {
     throw new Error(`Checklist incompleto: ${completedItems}/${totalRequired} itens. Complete todos os itens obrigatórios.`);
   }
   
-  // ✅ REGRA: Todos os itens obrigatórios devem existir no checklist
   const missingItems = requiredItems.filter(item => !checklist[item.id]);
   if (missingItems.length > 0) {
     const missingNames = missingItems.map(i => i.label).join(', ');
@@ -79,7 +69,7 @@ function validateChecklist(roomType, checklist) {
 
 const cleaningController = {
   /**
-   * Iniciar limpeza (CLEANER logado)
+   * Iniciar limpeza
    */
   startCleaning: async (req, res) => {
     try {
@@ -95,7 +85,6 @@ const cleaningController = {
         return res.status(401).json({ success: false, message: 'Usuário não autenticado' });
       }
 
-      // Verificar se funcionário existe e está ativo
       const cleaner = await prisma.user.findFirst({
         where: { id: cleanerId, role: 'CLEANER', status: 'ACTIVE' },
         select: { id: true, name: true, role: true, status: true }
@@ -105,18 +94,15 @@ const cleaningController = {
         return res.status(404).json({ success: false, message: 'Funcionário não encontrado ou inativo' });
       }
 
-      // Verificar se sala existe
       const room = await prisma.room.findUnique({ where: { id: roomId } });
       if (!room) {
         return res.status(404).json({ success: false, message: 'Sala não encontrada' });
       }
 
-      // Se sala já está em limpeza
       if (room.status === 'IN_PROGRESS') {
         return res.status(409).json({ success: false, message: 'Esta sala já está sendo limpa' });
       }
 
-      // Verificar se funcionário já está limpando outra sala
       const activeCleaning = await prisma.cleaningRecord.findFirst({
         where: { cleanerId, status: 'IN_PROGRESS' },
         include: { room: { select: { id: true, name: true, type: true, location: true } } }
@@ -130,13 +116,11 @@ const cleaningController = {
         });
       }
 
-      // Atualiza sala
       await prisma.room.update({
         where: { id: roomId },
         data: { status: 'IN_PROGRESS' }
       });
 
-      // Cria registro
       const record = await prisma.cleaningRecord.create({
         data: {
           roomId,
@@ -162,7 +146,7 @@ const cleaningController = {
   },
 
   /**
-   * Concluir limpeza (CLEANER logado) - ✅ COM VALIDAÇÃO DE CHECKLIST!
+   * Concluir limpeza
    */
   completeCleaning: async (req, res) => {
     try {
@@ -187,7 +171,6 @@ const cleaningController = {
         return res.status(404).json({ success: false, message: 'Registro de limpeza não encontrado' });
       }
 
-      // Se for CLEANER, só pode mexer no próprio
       if (req.user.role === 'CLEANER' && record.cleanerId !== userId) {
         return res.status(403).json({ success: false, message: 'Sem permissão para concluir esta limpeza' });
       }
@@ -196,9 +179,6 @@ const cleaningController = {
         return res.status(409).json({ success: false, message: 'Esta limpeza já foi concluída' });
       }
 
-      // ======================================================================
-      // ✅ VALIDAÇÃO DE CHECKLIST - RISCO #3 ELIMINADO!
-      // ======================================================================
       try {
         validateChecklist(record.room.type, checklist);
       } catch (validationError) {
@@ -249,11 +229,11 @@ const cleaningController = {
   },
 
   /**
-   * Cancelar limpeza (CLEANER logado)
+   * Cancelar limpeza
    */
   cancelCleaning: async (req, res) => {
     try {
-      const { recordId } = req.body;
+      const { recordId, notes } = req.body;
       const userId = req.user?.id;
 
       console.log('❌ Cancelando limpeza:', recordId, 'user:', userId);
@@ -304,7 +284,7 @@ const cleaningController = {
   },
 
   /**
-   * ✅ MINHAS limpezas de hoje (CLEANER logado)
+   * MINHAS limpezas de hoje
    */
   getMyTodayCleanings: async (req, res) => {
     try {
@@ -350,7 +330,7 @@ const cleaningController = {
   },
 
   /**
-   * ✅ MINHA limpeza ativa (CLEANER logado)
+   * MINHA limpeza ativa
    */
   getMyActiveCleaning: async (req, res) => {
     try {

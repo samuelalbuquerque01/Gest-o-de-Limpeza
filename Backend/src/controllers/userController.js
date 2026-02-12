@@ -1,6 +1,6 @@
-// Backend/src/controllers/userController.js - VERSÃO FINAL 100% CORRIGIDA
+// Backend/src/controllers/userController.js - VERSÃO CORRIGIDA DEFINITIVA
 const bcrypt = require('bcryptjs');
-const prisma = require('../utils/database');
+const prisma = require('../utils/database'); // ✅ SINGLETON - NUNCA new PrismaClient()!
 
 function normalizeEmail(email) {
   return String(email || '').toLowerCase().trim();
@@ -32,10 +32,6 @@ async function hashIfProvided(password) {
 }
 
 const userController = {
-  // =========================================================
-  // ✅ ROTAS PRINCIPAIS - /api/users
-  // =========================================================
-
   // GET /api/users
   listUsers: async (req, res) => {
     try {
@@ -238,23 +234,35 @@ const userController = {
     }
   },
 
-  // =========================================================
-  // ✅ GET /api/users/:id/stats - COMPLETAMENTE CORRIGIDO!
-  // =========================================================
+  // ✅ GET /api/users/:id/stats - CORRIGIDO!
   getWorkerStats: async (req, res) => {
     try {
       const { id } = req.params;
       
-      const user = await prisma.user.findUnique({ where: { id } });
+      const user = await prisma.user.findUnique({ 
+        where: { id } 
+      });
+      
       if (!user) {
-        return res.status(404).json({ success: false, message: 'Usuário não encontrado' });
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Usuário não encontrado' 
+        });
       }
 
-      const today = new Date(); today.setHours(0,0,0,0);
-      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); weekAgo.setHours(0,0,0,0);
-      const monthAgo = new Date(); monthAgo.setDate(monthAgo.getDate() - 30); monthAgo.setHours(0,0,0,0);
+      const today = new Date(); 
+      today.setHours(0, 0, 0, 0);
+      
+      const weekAgo = new Date(); 
+      weekAgo.setDate(weekAgo.getDate() - 7); 
+      weekAgo.setHours(0, 0, 0, 0);
+      
+      const monthAgo = new Date(); 
+      monthAgo.setDate(monthAgo.getDate() - 30); 
+      monthAgo.setHours(0, 0, 0, 0);
 
-      const [total, todayCount, weekCount, monthCount] = await Promise.all([
+      // ✅ NOME DO MODELO CORRETO: CleaningRecord
+      const [total, todayCount, weekCount, monthCount, records] = await Promise.all([
         prisma.cleaningRecord.count({ 
           where: { cleanerId: id, status: 'COMPLETED' } 
         }),
@@ -278,27 +286,28 @@ const userController = {
             status: 'COMPLETED', 
             completedAt: { gte: monthAgo } 
           } 
+        }),
+        prisma.cleaningRecord.findMany({
+          where: {
+            cleanerId: id,
+            status: 'COMPLETED',
+            startedAt: { not: null },
+            completedAt: { not: null }
+          },
+          select: { 
+            startedAt: true, 
+            completedAt: true 
+          },
+          take: 100
         })
       ]);
-
-      // ✅ CORRIGIDO: not: null (NÃO DateTime!)
-      const records = await prisma.cleaningRecord.findMany({
-        where: {
-          cleanerId: id,
-          status: 'COMPLETED',
-          startedAt: { not: null },
-          completedAt: { not: null }
-        },
-        select: { startedAt: true, completedAt: true },
-        take: 100
-      });
       
       let avgDuration = 0;
       if (records.length > 0) {
-        const totalMinutes = records.reduce((sum, r) => {
-          return sum + (new Date(r.completedAt) - new Date(r.startedAt)) / (1000 * 60);
+        const totalMs = records.reduce((sum, r) => {
+          return sum + (new Date(r.completedAt) - new Date(r.startedAt));
         }, 0);
-        avgDuration = Math.round(totalMinutes / records.length);
+        avgDuration = Math.round(totalMs / (1000 * 60 * records.length));
       }
 
       const lastCleaning = await prisma.cleaningRecord.findFirst({
@@ -324,14 +333,13 @@ const userController = {
       console.error('🔥 Erro ao buscar estatísticas:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao buscar estatísticas' 
+        message: 'Erro ao buscar estatísticas',
+        error: error.message 
       });
     }
   },
 
-  // =========================================================
   // ✅ GET /api/users/:id/login-history - CORRIGIDO!
-  // =========================================================
   getUserLoginHistory: async (req, res) => {
     try {
       const { id } = req.params;
@@ -347,10 +355,13 @@ const userController = {
       });
 
       if (!user) {
-        return res.status(404).json({ success: false, message: 'Usuário não encontrado' });
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Usuário não encontrado' 
+        });
       }
 
-      // ✅ CORRIGIDO: APENAS include, SEM select!
+      // ✅ NOME DO MODELO CORRETO: CleaningRecord
       const cleaningHistory = await prisma.cleaningRecord.findMany({
         where: { 
           cleanerId: id, 
@@ -379,8 +390,8 @@ const userController = {
           timestamp: c.startedAt,
           completedAt: c.completedAt,
           status: c.status,
-          room: c.room.name,
-          location: c.room.location,
+          room: c.room?.name,
+          location: c.room?.location,
           duration: c.startedAt && c.completedAt 
             ? Math.round((new Date(c.completedAt) - new Date(c.startedAt)) / (1000 * 60))
             : null
@@ -391,58 +402,72 @@ const userController = {
       console.error('🔥 Erro ao buscar histórico:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao buscar histórico de login' 
+        message: 'Erro ao buscar histórico de login',
+        error: error.message 
       });
     }
   },
 
-  // =========================================================
-  // ✅ GET /api/users/:id/performance
-  // =========================================================
+  // ✅ GET /api/users/:id/performance - CORRIGIDO (SEM RAW QUERY)
   getWorkerPerformance: async (req, res) => {
     try {
       const { id } = req.params;
       
-      const performance = await prisma.$queryRaw`
-        SELECT 
-          EXTRACT(DOW FROM "completedAt") as day_of_week,
-          COUNT(*) as total,
-          AVG(EXTRACT(EPOCH FROM ("completedAt" - "startedAt")) / 60) as avg_duration
-        FROM "CleaningRecord"
-        WHERE "cleanerId" = ${id}
-          AND "status" = 'COMPLETED'
-          AND "completedAt" IS NOT NULL
-          AND "startedAt" IS NOT NULL
-        GROUP BY EXTRACT(DOW FROM "completedAt")
-        ORDER BY day_of_week
-      `;
+      const records = await prisma.cleaningRecord.findMany({
+        where: {
+          cleanerId: id,
+          status: 'COMPLETED',
+          startedAt: { not: null },
+          completedAt: { not: null }
+        },
+        select: {
+          startedAt: true,
+          completedAt: true
+        },
+        take: 500
+      });
 
-      const hourlyPerformance = await prisma.$queryRaw`
-        SELECT 
-          EXTRACT(HOUR FROM "startedAt") as hour,
-          COUNT(*) as total,
-          AVG(EXTRACT(EPOCH FROM ("completedAt" - "startedAt")) / 60) as avg_duration
-        FROM "CleaningRecord"
-        WHERE "cleanerId" = ${id}
-          AND "status" = 'COMPLETED'
-          AND "startedAt" IS NOT NULL
-          AND "completedAt" IS NOT NULL
-        GROUP BY EXTRACT(HOUR FROM "startedAt")
-        ORDER BY hour
-      `;
+      const days = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+      const byDayOfWeek = Array(7).fill(null).map((_, i) => ({
+        day_of_week: i,
+        day_name: days[i],
+        total: 0,
+        avg_duration: 0,
+        total_duration: 0
+      }));
+
+      records.forEach(record => {
+        if (record.startedAt && record.completedAt) {
+          const date = new Date(record.startedAt);
+          const day = date.getDay();
+          const duration = (new Date(record.completedAt) - new Date(record.startedAt)) / (1000 * 60);
+          
+          byDayOfWeek[day].total += 1;
+          byDayOfWeek[day].total_duration += duration;
+        }
+      });
+
+      byDayOfWeek.forEach(day => {
+        if (day.total > 0) {
+          day.avg_duration = Math.round(day.total_duration / day.total);
+        }
+        delete day.total_duration;
+      });
+
+      const filteredPerformance = byDayOfWeek.filter(day => day.total > 0);
 
       return res.json({
         success: true,
-        byDayOfWeek: performance,
-        byHour: hourlyPerformance,
-        totalRooms: performance.length
+        byDayOfWeek: filteredPerformance,
+        totalRooms: records.length
       });
       
     } catch (error) {
       console.error('🔥 Erro ao buscar performance:', error);
       return res.status(500).json({ 
         success: false, 
-        message: 'Erro ao buscar performance' 
+        message: 'Erro ao buscar performance',
+        error: error.message 
       });
     }
   },
