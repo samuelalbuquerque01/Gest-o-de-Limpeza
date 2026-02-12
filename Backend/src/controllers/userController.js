@@ -1,6 +1,6 @@
-// Backend/src/controllers/userController.js - VERSÃO CORRIGIDA DEFINITIVA
+// Backend/src/controllers/userController.js - VERSÃO CORRIGIDA E FUNCIONANDO!
 const bcrypt = require('bcryptjs');
-const prisma = require('../utils/database'); // ✅ SINGLETON - NUNCA new PrismaClient()!
+const prisma = require('../utils/database'); // ✅ ÚNICA INSTÂNCIA!
 
 function normalizeEmail(email) {
   return String(email || '').toLowerCase().trim();
@@ -47,7 +47,11 @@ const userController = {
       return res.json({ success: true, users: users.map(safeUser) });
     } catch (error) {
       console.error('🔥 Erro ao listar usuários:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao listar usuários' });
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Erro ao listar usuários',
+        error: error.message 
+      });
     }
   },
 
@@ -96,7 +100,11 @@ const userController = {
       return res.status(201).json({ success: true, user: safeUser(user) });
     } catch (error) {
       console.error('🔥 Erro ao criar usuário:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao criar usuário' });
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Erro ao criar usuário',
+        error: error.message 
+      });
     }
   },
 
@@ -206,7 +214,11 @@ const userController = {
       return res.json({ success: true, message: 'Senha redefinida com sucesso' });
     } catch (error) {
       console.error('🔥 Erro ao resetar senha:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao resetar senha' });
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Erro ao resetar senha',
+        error: error.message 
+      });
     }
   },
 
@@ -230,14 +242,22 @@ const userController = {
       return res.json({ success: true, stats: { total, active, inactive, roles } });
     } catch (error) {
       console.error('🔥 Erro ao gerar stats:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao buscar estatísticas' });
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Erro ao buscar estatísticas',
+        error: error.message 
+      });
     }
   },
 
-  // ✅ GET /api/users/:id/stats - CORRIGIDO!
+  // =========================================================
+  // ✅ GET /api/users/:id/stats - CORRIGIDO E TESTADO!
+  // =========================================================
   getWorkerStats: async (req, res) => {
     try {
       const { id } = req.params;
+      
+      console.log(`📊 Buscando estatísticas do funcionário: ${id}`);
       
       const user = await prisma.user.findUnique({ 
         where: { id } 
@@ -261,46 +281,49 @@ const userController = {
       monthAgo.setDate(monthAgo.getDate() - 30); 
       monthAgo.setHours(0, 0, 0, 0);
 
-      // ✅ NOME DO MODELO CORRETO: CleaningRecord
-      const [total, todayCount, weekCount, monthCount, records] = await Promise.all([
-        prisma.cleaningRecord.count({ 
-          where: { cleanerId: id, status: 'COMPLETED' } 
-        }),
-        prisma.cleaningRecord.count({ 
-          where: { 
-            cleanerId: id, 
-            status: 'COMPLETED', 
-            completedAt: { gte: today } 
-          } 
-        }),
-        prisma.cleaningRecord.count({ 
-          where: { 
-            cleanerId: id, 
-            status: 'COMPLETED', 
-            completedAt: { gte: weekAgo } 
-          } 
-        }),
-        prisma.cleaningRecord.count({ 
-          where: { 
-            cleanerId: id, 
-            status: 'COMPLETED', 
-            completedAt: { gte: monthAgo } 
-          } 
-        }),
-        prisma.cleaningRecord.findMany({
-          where: {
-            cleanerId: id,
-            status: 'COMPLETED',
-            startedAt: { not: null },
-            completedAt: { not: null }
-          },
-          select: { 
-            startedAt: true, 
-            completedAt: true 
-          },
-          take: 100
-        })
-      ]);
+      // ✅ USANDO O NOME CORRETO DO MODELO: cleaningRecord (NÃO cleaning_records)
+      const total = await prisma.cleaningRecord.count({ 
+        where: { cleanerId: id, status: 'COMPLETED' } 
+      });
+      
+      const todayCount = await prisma.cleaningRecord.count({ 
+        where: { 
+          cleanerId: id, 
+          status: 'COMPLETED', 
+          completedAt: { gte: today } 
+        } 
+      });
+      
+      const weekCount = await prisma.cleaningRecord.count({ 
+        where: { 
+          cleanerId: id, 
+          status: 'COMPLETED', 
+          completedAt: { gte: weekAgo } 
+        } 
+      });
+      
+      const monthCount = await prisma.cleaningRecord.count({ 
+        where: { 
+          cleanerId: id, 
+          status: 'COMPLETED', 
+          completedAt: { gte: monthAgo } 
+        } 
+      });
+
+      // Buscar registros para calcular média
+      const records = await prisma.cleaningRecord.findMany({
+        where: {
+          cleanerId: id,
+          status: 'COMPLETED',
+          startedAt: { not: null },
+          completedAt: { not: null }
+        },
+        select: { 
+          startedAt: true, 
+          completedAt: true 
+        },
+        take: 100
+      });
       
       let avgDuration = 0;
       if (records.length > 0) {
@@ -319,6 +342,8 @@ const userController = {
         }
       });
 
+      console.log(`✅ Estatísticas do funcionário ${id}: total=${total}, today=${todayCount}`);
+
       return res.json({
         success: true,
         total: total || 0,
@@ -330,7 +355,7 @@ const userController = {
       });
       
     } catch (error) {
-      console.error('🔥 Erro ao buscar estatísticas:', error);
+      console.error(`🔥 Erro ao buscar estatísticas do funcionário ${req.params.id}:`, error);
       return res.status(500).json({ 
         success: false, 
         message: 'Erro ao buscar estatísticas',
@@ -339,10 +364,14 @@ const userController = {
     }
   },
 
-  // ✅ GET /api/users/:id/login-history - CORRIGIDO!
+  // =========================================================
+  // ✅ GET /api/users/:id/login-history - CORRIGIDO E TESTADO!
+  // =========================================================
   getUserLoginHistory: async (req, res) => {
     try {
       const { id } = req.params;
+      
+      console.log(`🔐 Buscando histórico de login do funcionário: ${id}`);
       
       const user = await prisma.user.findUnique({
         where: { id },
@@ -361,7 +390,7 @@ const userController = {
         });
       }
 
-      // ✅ NOME DO MODELO CORRETO: CleaningRecord
+      // ✅ USANDO O NOME CORRETO DO MODELO: cleaningRecord
       const cleaningHistory = await prisma.cleaningRecord.findMany({
         where: { 
           cleanerId: id, 
@@ -378,6 +407,8 @@ const userController = {
         },
         take: 20
       });
+
+      console.log(`✅ Histórico do funcionário ${id}: ${cleaningHistory.length} registros`);
 
       return res.json({
         success: true,
@@ -399,7 +430,7 @@ const userController = {
       });
       
     } catch (error) {
-      console.error('🔥 Erro ao buscar histórico:', error);
+      console.error(`🔥 Erro ao buscar histórico do funcionário ${req.params.id}:`, error);
       return res.status(500).json({ 
         success: false, 
         message: 'Erro ao buscar histórico de login',
@@ -408,10 +439,14 @@ const userController = {
     }
   },
 
-  // ✅ GET /api/users/:id/performance - CORRIGIDO (SEM RAW QUERY)
+  // =========================================================
+  // ✅ GET /api/users/:id/performance - CORRIGIDO E SIMPLIFICADO
+  // =========================================================
   getWorkerPerformance: async (req, res) => {
     try {
       const { id } = req.params;
+      
+      console.log(`📈 Buscando performance do funcionário: ${id}`);
       
       const records = await prisma.cleaningRecord.findMany({
         where: {
@@ -432,8 +467,7 @@ const userController = {
         day_of_week: i,
         day_name: days[i],
         total: 0,
-        avg_duration: 0,
-        total_duration: 0
+        avg_duration: 0
       }));
 
       records.forEach(record => {
@@ -443,18 +477,19 @@ const userController = {
           const duration = (new Date(record.completedAt) - new Date(record.startedAt)) / (1000 * 60);
           
           byDayOfWeek[day].total += 1;
-          byDayOfWeek[day].total_duration += duration;
+          byDayOfWeek[day].avg_duration = 
+            (byDayOfWeek[day].avg_duration * (byDayOfWeek[day].total - 1) + duration) / 
+            byDayOfWeek[day].total;
         }
       });
 
       byDayOfWeek.forEach(day => {
-        if (day.total > 0) {
-          day.avg_duration = Math.round(day.total_duration / day.total);
-        }
-        delete day.total_duration;
+        day.avg_duration = Math.round(day.avg_duration);
       });
 
       const filteredPerformance = byDayOfWeek.filter(day => day.total > 0);
+
+      console.log(`✅ Performance do funcionário ${id}: ${filteredPerformance.length} dias com registros`);
 
       return res.json({
         success: true,
@@ -463,7 +498,7 @@ const userController = {
       });
       
     } catch (error) {
-      console.error('🔥 Erro ao buscar performance:', error);
+      console.error(`🔥 Erro ao buscar performance do funcionário ${req.params.id}:`, error);
       return res.status(500).json({ 
         success: false, 
         message: 'Erro ao buscar performance',
@@ -487,7 +522,11 @@ const userController = {
       return res.json({ success: true, workers: workers.map(safeUser) });
     } catch (error) {
       console.error('🔥 Erro ao listar funcionários:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao listar funcionários' });
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Erro ao listar funcionários',
+        error: error.message 
+      });
     }
   },
 
@@ -525,7 +564,11 @@ const userController = {
       return res.status(201).json({ success: true, worker: safeUser(worker) });
     } catch (error) {
       console.error('🔥 Erro ao criar funcionário:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao criar funcionário' });
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Erro ao criar funcionário',
+        error: error.message 
+      });
     }
   },
 
@@ -584,7 +627,11 @@ const userController = {
       return res.json({ success: true, worker: safeUser(worker) });
     } catch (error) {
       console.error('🔥 Erro ao alterar status:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao alterar status' });
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Erro ao alterar status',
+        error: error.message 
+      });
     }
   },
 
@@ -608,7 +655,11 @@ const userController = {
       return res.json({ success: true, message: 'Senha redefinida com sucesso' });
     } catch (error) {
       console.error('🔥 Erro ao resetar senha:', error);
-      return res.status(500).json({ success: false, message: 'Erro ao resetar senha' });
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Erro ao resetar senha',
+        error: error.message 
+      });
     }
   },
 };
