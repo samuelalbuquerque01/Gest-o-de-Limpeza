@@ -140,7 +140,25 @@ class QrCoreService {
    */
   async printQRCode(roomId) {
     try {
-      const printUrl = `${api.defaults.baseURL?.replace('/api', '') || 'http://localhost:5000'}/api/print-qr/${roomId}`;
+      const resolvedRoomId = typeof roomId === 'string' ? roomId.trim() : '';
+      if (!resolvedRoomId) {
+        throw new Error('ID da sala inválido para impressão');
+      }
+
+      const envApiUrl =
+        process.env.REACT_APP_API_URL ||
+        process.env.REACT_APP_BACKEND_URL ||
+        '';
+
+      const baseFromApi =
+        typeof api?.defaults?.baseURL === 'string' ? api.defaults.baseURL : '';
+
+      const rawBase = envApiUrl || baseFromApi;
+      const backendOrigin = rawBase.startsWith('http')
+        ? rawBase.replace(/\/api\/?$/, '')
+        : window.location.origin;
+
+      const printUrl = `${backendOrigin}/api/qr/print/${encodeURIComponent(resolvedRoomId)}`;
       const printWindow = window.open(printUrl, '_blank', 'width=800,height=600');
       
       if (!printWindow) {
