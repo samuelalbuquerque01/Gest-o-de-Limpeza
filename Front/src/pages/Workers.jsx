@@ -38,11 +38,8 @@ import {
   Person as PersonIcon,
   Email,
   Phone,
-  Badge,
-  QrCode as QrCodeIcon,
   CheckCircle,
   PendingActions,
-  LockReset,
   Login as LoginIcon,
   CleaningServices,
 } from '@mui/icons-material';
@@ -296,27 +293,6 @@ const Workers = () => {
     }
   };
 
-  const handleResetPassword = async (workerId) => {
-    if (window.confirm('Deseja resetar a senha deste funcionário para "senha123"?')) {
-      try {
-        const response = await userService.resetPassword(workerId, 'senha123');
-        if (response.success) {
-          setMessage({ type: 'success', text: 'Senha resetada com sucesso!' });
-        } else {
-          setMessage({ type: 'error', text: response.error || 'Erro ao resetar senha' });
-        }
-      } catch (err) {
-        setMessage({ type: 'error', text: 'Erro ao resetar senha' });
-        console.error('Erro ao resetar senha:', err);
-      }
-    }
-  };
-
-  const handleGenerateQRCode = (workerId) => {
-    const worker = workers.find(w => w.id === workerId);
-    alert(`QR Code de ${worker.name}: QR-FUNC-${workerId}\n\nEm um sistema real, aqui seria gerado um QR Code para download.`);
-  };
-
   if (user?.role !== 'ADMIN') {
     return (
       <Container maxWidth="xl" sx={{ py: 3 }}>
@@ -483,9 +459,6 @@ const Workers = () => {
                             <Typography variant="body1" fontWeight={500}>
                               {worker.name}
                             </Typography>
-                            <Typography variant="caption" color="textSecondary">
-                              ID: {worker.id?.substring(0, 8)}...
-                            </Typography>
                           </Box>
                         </Box>
                       </TableCell>
@@ -560,19 +533,9 @@ const Workers = () => {
                       </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', gap: 0.5 }}>
-                          <Tooltip title="Gerar QR Code">
-                            <IconButton size="small" onClick={() => handleGenerateQRCode(worker.id)}>
-                              <QrCodeIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
                           <Tooltip title="Editar">
                             <IconButton size="small" onClick={() => handleOpenDialog(worker)}>
                               <EditIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Resetar Senha">
-                            <IconButton size="small" onClick={() => handleResetPassword(worker.id)}>
-                              <LockReset fontSize="small" />
                             </IconButton>
                           </Tooltip>
                           <Tooltip title="Excluir">

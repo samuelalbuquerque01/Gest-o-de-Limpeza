@@ -83,24 +83,6 @@ const userService = {
     }
   },
 
-  resetPassword: async (id, password) => {
-    try {
-      console.log(`🔐 [userService] Resetando senha do usuário ${id}`);
-      const response = await api.post(`/users/${id}/reset-password`, { password });
-      return {
-        success: !!response?.success,
-        data: response?.data || null,
-        error: response?.error || response?.message,
-      };
-    } catch (error) {
-      console.error(`❌ [userService] Erro ao resetar senha do usuário ${id}:`, error.message);
-      return {
-        success: false,
-        error: error.message || 'Erro ao resetar senha',
-      };
-    }
-  },
-
   getUserStats: async () => {
     try {
       console.log('📊 [userService] Buscando estatísticas gerais');

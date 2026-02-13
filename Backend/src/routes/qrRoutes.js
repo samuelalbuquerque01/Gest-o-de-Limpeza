@@ -39,19 +39,13 @@ router.post('/generate/:roomId', authMiddleware, requireAdmin, QRController.gene
 // 2. Baixar QR Code de uma sala
 router.get('/download/:roomId', authMiddleware, requireAdmin, QRController.downloadQRCode);
 
-// 3. Gerar QR Code para funcionário
-router.post('/generate-user/:userId', authMiddleware, requireAdmin, QRController.generateUserQRCode);
-
-// 4. Baixar QR Code de funcionário
-router.get('/download-user/:userId', authMiddleware, requireAdmin, QRController.downloadUserQRCode);
-
-// 5. Gerar QR Codes em lote
+// 3. Gerar QR Codes em lote
 router.post('/generate-batch', authMiddleware, requireAdmin, QRController.generateBatchQRCodes);
 
-// 6. Gerar QR Codes faltantes
+// 4. Gerar QR Codes faltantes
 router.post('/generate-missing', authMiddleware, requireAdmin, QRController.generateMissingQRCodes);
 
-// 7. Relatório de QR Codes
+// 5. Relatório de QR Codes
 router.get('/report', authMiddleware, requireAdmin, QRController.generateQRReport);
 
 // ✅ Teste de saúde da rota

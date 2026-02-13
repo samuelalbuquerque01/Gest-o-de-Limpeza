@@ -176,25 +176,6 @@ const qrService = {
     }
   },
 
-  // ✅ QR CODE DE USUÁRIO
-  async generateUserQRCode(userId) {
-    try {
-      const { default: api } = await import('./api');
-      const response = await api.post(`/qr/generate-user/${userId}`);
-      return {
-        success: response?.success || false,
-        data: response?.data || null,
-        error: response?.message || null
-      };
-    } catch (error) {
-      return {
-        success: false,
-        data: null,
-        error: error.message
-      };
-    }
-  },
-
   // ⚠️ DEPRECATED - NÃO USAR MAIS
   async generateLocalQRCode() {
     console.warn('⚠️ generateLocalQRCode está depreciado. Use generateQRCode via backend.');

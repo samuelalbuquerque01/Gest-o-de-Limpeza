@@ -24,7 +24,6 @@ router.get('/', authMiddleware, requireAdmin, userController.listUsers);
 router.post('/', authMiddleware, requireAdmin, userController.createUser);
 router.put('/:id', authMiddleware, requireAdmin, userController.updateUser);
 router.delete('/:id', authMiddleware, requireAdmin, userController.deleteUser);
-router.post('/:id/reset-password', authMiddleware, requireAdmin, userController.resetPassword);
 router.get('/stats', authMiddleware, requireAdmin, userController.getStats);
 
 // ----
@@ -41,6 +40,5 @@ router.get('/workers', authMiddleware, requireAdmin, userController.listWorkers)
 router.post('/workers', authMiddleware, requireAdmin, userController.createWorker);
 router.put('/workers/:id', authMiddleware, requireAdmin, userController.updateWorker);
 router.patch('/workers/:id/status', authMiddleware, requireAdmin, userController.setWorkerStatus);
-router.post('/workers/:id/reset-password', authMiddleware, requireAdmin, userController.resetWorkerPassword);
 
 module.exports = router;

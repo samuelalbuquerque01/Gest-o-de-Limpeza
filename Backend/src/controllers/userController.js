@@ -188,33 +188,6 @@ const userController = {
     }
   },
 
-  // POST /api/users/:id/reset-password
-  resetPassword: async (req, res) => {
-    try {
-      const { id } = req.params;
-      const newPassword = req.body?.newPassword ?? req.body?.password;
-
-      if (!newPassword || String(newPassword).length < 4) {
-        return res.status(400).json({ success: false, message: 'Nova senha inválida' });
-      }
-
-      const hash = await bcrypt.hash(String(newPassword), 10);
-
-      await prisma.user.update({
-        where: { id },
-        data: { password: hash },
-      });
-
-      return res.json({ success: true, message: 'Senha redefinida com sucesso' });
-    } catch (error) {
-      console.error('🔥 Erro ao resetar senha:', error);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Erro ao resetar senha' 
-      });
-    }
-  },
-
   // GET /api/users/stats
   getStats: async (req, res) => {
     try {
@@ -610,31 +583,7 @@ const userController = {
     }
   },
 
-  resetWorkerPassword: async (req, res) => {
-    try {
-      const { id } = req.params;
-      const newPassword = req.body?.newPassword ?? req.body?.password;
-
-      if (!newPassword || String(newPassword).length < 4) {
-        return res.status(400).json({ success: false, message: 'Nova senha inválida' });
-      }
-
-      const hash = await bcrypt.hash(String(newPassword), 10);
-
-      await prisma.user.update({
-        where: { id },
-        data: { password: hash },
-      });
-
-      return res.json({ success: true, message: 'Senha redefinida com sucesso' });
-    } catch (error) {
-      console.error('🔥 Erro ao resetar senha:', error);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Erro ao resetar senha' 
-      });
-    }
-  }
+  
 };
 
 module.exports = userController;
