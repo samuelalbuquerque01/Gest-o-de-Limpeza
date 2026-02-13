@@ -604,6 +604,12 @@ const roomController = {
           inProgress, 
           completed, 
           attention,
+          byStatus: {
+            PENDING: pending,
+            IN_PROGRESS: inProgress,
+            COMPLETED: completed,
+            NEEDS_ATTENTION: attention,
+          },
           withQR,
           withoutQR,
           qrCoverage: total > 0 ? Math.round((withQR / total) * 100) : 0

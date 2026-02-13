@@ -35,7 +35,14 @@ const roomService = {
   async getRoomStats() {
     try {
       const res = await api.get("/rooms/stats");
-      return { success: !!res?.success, stats: res?.stats || {}, error: res?.message || null };
+      const raw = res?.stats || {};
+      const byStatus = raw?.byStatus || {
+        PENDING: raw?.pending || 0,
+        IN_PROGRESS: raw?.inProgress || 0,
+        COMPLETED: raw?.completed || 0,
+        NEEDS_ATTENTION: raw?.attention || 0,
+      };
+      return { success: !!res?.success, stats: { ...raw, byStatus }, error: res?.message || null };
     } catch (err) {
       return { success: false, stats: {}, error: err?.message || "Erro ao buscar estatísticas" };
     }
