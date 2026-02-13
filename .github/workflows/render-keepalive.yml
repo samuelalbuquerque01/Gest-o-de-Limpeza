@@ -17,8 +17,10 @@ jobs:
           URL="${KEEPALIVE_URL:-https://gest-o-de-limpeza.onrender.com/api/health}"
           echo "Pinging: $URL"
           curl --fail --silent --show-error --location \
-            --max-time 20 \
-            --retry 2 \
-            --retry-delay 3 \
+            --connect-timeout 15 \
+            --max-time 90 \
+            --retry 5 \
+            --retry-all-errors \
+            --retry-delay 10 \
             "$URL" > /dev/null
           echo "Keepalive ping success"
