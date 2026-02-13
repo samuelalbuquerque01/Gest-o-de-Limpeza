@@ -2,23 +2,20 @@ name: Render Keepalive
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     timeout-minutes: 3
+
     steps:
       - name: Ping Render health endpoint
-        env:
-          KEEPALIVE_URL: ${{ secrets.RENDER_HEALTH_URL }}
         run: |
-          URL="${KEEPALIVE_URL:-https://gest-o-de-limpeza.onrender.com/api/health}"
+          URL="https://gest-o-de-limpeza.onrender.com/api/health"
           echo "Pinging: $URL"
+
           curl --fail --silent --show-error --location \
             --connect-timeout 15 \
             --max-time 90 \
@@ -26,4 +23,5 @@ jobs:
             --retry-all-errors \
             --retry-delay 10 \
             "$URL" > /dev/null
+
           echo "Keepalive ping success"
