@@ -1,4 +1,4 @@
-// src/pages/Rooms.jsx - CÓimplementa??o atual
+﻿// src/pages/Rooms.jsx - CÃ“implementa??o atual
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
@@ -47,9 +47,6 @@ import {
   ContentCopy,
   Close,
   Refresh,
-  PendingActions,
-  AccessTime,
-  CheckCircle,
   Warning,
   MeetingRoom,
   Bathroom,
@@ -76,10 +73,10 @@ import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 import roomService from '../services/roomService';
-import QRImageModal from '../components/common/QRImageModal'; // ✅ NOVO COMPONENTE
+import QRImageModal from '../components/common/QRImageModal'; // âœ… NOVO COMPONENTE
 
 // ----
-// Modal de confirmação (delete)
+// Modal de confirmaÃ§Ã£o (delete)
 // ----
 const DeleteConfirmationModal = ({ open, onClose, onConfirm, room }) => {
   return (
@@ -87,7 +84,7 @@ const DeleteConfirmationModal = ({ open, onClose, onConfirm, room }) => {
       <DialogTitle sx={{ color: 'error.main' }}>
         <Box display="flex" alignItems="center" gap={1}>
           <Warning />
-          Confirmar Exclusão
+          Confirmar ExclusÃ£o
         </Box>
       </DialogTitle>
 
@@ -101,22 +98,22 @@ const DeleteConfirmationModal = ({ open, onClose, onConfirm, room }) => {
             {room?.name}
           </Typography>
           <Typography variant="body2">
-            {room?.location} • {room?.type}
+            {room?.location} â€¢ {room?.type}
           </Typography>
         </Alert>
 
         {room?.stats?.totalCleanings > 0 && (
           <Alert severity="info" sx={{ mb: 2 }}>
             <Typography variant="body2">
-              <strong>Atenção:</strong> Este ambiente possui {room.stats.totalCleanings} registro(s) histórico(s) de limpeza.
+              <strong>AtenÃ§Ã£o:</strong> Este ambiente possui {room.stats.totalCleanings} registro(s) histÃ³rico(s) de limpeza.
               <br />
-              <strong>Como administrador, você pode deletá-lo mesmo com registros.</strong>
+              <strong>Como administrador, vocÃª pode deletÃ¡-lo mesmo com registros.</strong>
             </Typography>
           </Alert>
         )}
 
         <Typography variant="body2" color="text.secondary">
-          Esta ação não pode ser desfeita.
+          Esta aÃ§Ã£o nÃ£o pode ser desfeita.
         </Typography>
       </DialogContent>
 
@@ -125,7 +122,7 @@ const DeleteConfirmationModal = ({ open, onClose, onConfirm, room }) => {
           Cancelar
         </Button>
         <Button onClick={onConfirm} variant="contained" color="error">
-          Confirmar Exclusão
+          Confirmar ExclusÃ£o
         </Button>
       </DialogActions>
     </Dialog>
@@ -144,7 +141,7 @@ const QRModal = ({ open, onClose, room }) => {
   const generateQRImage = async () => {
     try {
       setLoading(true);
-      // Aqui você poderia chamar o backend para gerar a imagem
+      // Aqui vocÃª poderia chamar o backend para gerar a imagem
       // Por enquanto vamos usar um placeholder
       setQrImage(`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qr)}`);
     } catch (error) {
@@ -163,7 +160,7 @@ const QRModal = ({ open, onClose, room }) => {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(qr);
-      alert('QR Code copiado para a área de transferência!');
+      alert('QR Code copiado para a Ã¡rea de transferÃªncia!');
     } catch {
       const el = document.createElement('textarea');
       el.value = qr;
@@ -171,12 +168,12 @@ const QRModal = ({ open, onClose, room }) => {
       el.select();
       document.execCommand('copy');
       document.body.removeChild(el);
-      alert('QR Code copiado para a área de transferência!');
+      alert('QR Code copiado para a Ã¡rea de transferÃªncia!');
     }
   };
 
   const printQR = () => {
-    const title = `${room?.name || 'Ambiente'} — QR`;
+    const title = `${room?.name || 'Ambiente'} â€” QR`;
     const html = `
       <html>
         <head>
@@ -236,7 +233,7 @@ const QRModal = ({ open, onClose, room }) => {
         <body>
           <div class="box">
             <div class="name">${room?.name || 'Ambiente'}</div>
-            <div class="meta">${room?.location || ''} • ${room?.type || ''}</div>
+            <div class="meta">${room?.location || ''} â€¢ ${room?.type || ''}</div>
             
             ${qrImage ? `<img src="${qrImage}" alt="QR Code" class="qr-image" />` : ''}
             
@@ -244,8 +241,8 @@ const QRModal = ({ open, onClose, room }) => {
               ${qr || 'SEM QR'}
             </div>
             <div class="instructions">
-              Escaneie este código com o aplicativo para iniciar a limpeza<br>
-              Sistema Neuropsicocentro • ${new Date().toLocaleDateString('pt-BR')}
+              Escaneie este cÃ³digo com o aplicativo para iniciar a limpeza<br>
+              Sistema Neuropsicocentro â€¢ ${new Date().toLocaleDateString('pt-BR')}
             </div>
           </div>
           <div class="no-print" style="margin-top: 30px;">
@@ -300,7 +297,7 @@ const QRModal = ({ open, onClose, room }) => {
         <Paper sx={{ p: 2.2, borderRadius: 3 }}>
           <Typography sx={{ fontWeight: 900 }}>{room?.name || 'Ambiente'}</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            {room?.location || '—'} • {room?.type || '—'}
+            {room?.location || 'â€”'} â€¢ {room?.type || 'â€”'}
           </Typography>
 
           <Paper
@@ -312,7 +309,7 @@ const QRModal = ({ open, onClose, room }) => {
             }}
           >
             <Typography variant="caption" color="text.secondary">
-              Código QR
+              CÃ³digo QR
             </Typography>
             <Typography
               sx={{
@@ -323,7 +320,7 @@ const QRModal = ({ open, onClose, room }) => {
                 wordBreak: 'break-word',
               }}
             >
-              {qr || '—'}
+              {qr || 'â€”'}
             </Typography>
 
             {loading ? (
@@ -359,7 +356,7 @@ const QRModal = ({ open, onClose, room }) => {
           </Paper>
 
           <Alert severity="info" sx={{ mt: 2 }}>
-            Este código ajuda a localizar o ambiente rapidamente e manter rastreabilidade para auditoria.
+            Este cÃ³digo ajuda a localizar o ambiente rapidamente e manter rastreabilidade para auditoria.
           </Alert>
         </Paper>
       </DialogContent>
@@ -374,7 +371,7 @@ const QRModal = ({ open, onClose, room }) => {
 };
 
 // ----
-// Página Rooms - ATUALIZADA
+// PÃ¡gina Rooms - ATUALIZADA
 // ----
 const Rooms = () => {
   const navigate = useNavigate();
@@ -384,7 +381,7 @@ const Rooms = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ open: false, room: null });
   const [qrModal, setQrModal] = useState({ open: false, room: null });
-  const [qrImageModal, setQrImageModal] = useState({ open: false, room: null }); // ✅ NOVO MODAL
+  const [qrImageModal, setQrImageModal] = useState({ open: false, room: null }); // âœ… NOVO MODAL
 
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [filterType, setFilterType] = useState('ALL');
@@ -492,32 +489,32 @@ const Rooms = () => {
     setSelectedRoom(null);
   };
 
-  //  FUNÇÃO ajustada PARA SALVAR SALA
+  //  FUNÃ‡ÃƒO ajustada PARA SALVAR SALA
   const handleSaveRoom = async () => {
     try {
       setSubmitting(true);
       setError('');
 
-      //  validação local
+      //  validaÃ§Ã£o local
       if (!newRoom.name?.trim() || !newRoom.type?.trim() || !newRoom.location?.trim()) {
-        setError('Preencha Nome, Tipo e Localização.');
+        setError('Preencha Nome, Tipo e LocalizaÃ§Ã£o.');
         return;
       }
 
-      //  Se não tiver QR Code, gera automaticamente
+      //  Se nÃ£o tiver QR Code, gera automaticamente
       const qrCodeToSave = newRoom.qrCode?.trim() || generateQrCode();
 
-      //  backend usa notes (não description)
+      //  backend usa notes (nÃ£o description)
       const payload = {
         name: newRoom.name.trim(),
         type: newRoom.type,
         location: newRoom.location.trim(),
-        qrCode: qrCodeToSave, // ✅ Garante que sempre tem QR Code
+        qrCode: qrCodeToSave, // âœ… Garante que sempre tem QR Code
         priority: newRoom.priority,
         notes: newRoom.description?.trim() || null,
       };
 
-      console.log('📤 Enviando sala com QR Code:', qrCodeToSave);
+      console.log('ðŸ“¤ Enviando sala com QR Code:', qrCodeToSave);
 
       let response;
       if (selectedRoom) {
@@ -529,8 +526,8 @@ const Rooms = () => {
       if (response.success) {
         //  VERIFICA SE RETORNOU IMAGEM DO QR CODE
         if (response.qrImage) {
-          console.log('✅ QR Code IMAGEM gerada com sucesso!');
-          // Você pode exibir a imagem aqui se quiser
+          console.log('âœ… QR Code IMAGEM gerada com sucesso!');
+          // VocÃª pode exibir a imagem aqui se quiser
         }
         
         handleCloseDialog();
@@ -568,8 +565,8 @@ const Rooms = () => {
 
         const message =
           room.stats?.totalCleanings > 0
-            ? `Ambiente "${room.name}" e seus ${room.stats.totalCleanings} registros foram excluídos!`
-            : `Ambiente "${room.name}" excluído com sucesso!`;
+            ? `Ambiente "${room.name}" e seus ${room.stats.totalCleanings} registros foram excluÃ­dos!`
+            : `Ambiente "${room.name}" excluÃ­do com sucesso!`;
 
         setToast({ open: true, type: 'success', msg: message });
       } else {
@@ -577,7 +574,7 @@ const Rooms = () => {
       }
     } catch (err) {
       console.error('Erro ao excluir sala:', err);
-      setError('Erro ao excluir ambiente. Verifique sua conexão.');
+      setError('Erro ao excluir ambiente. Verifique sua conexÃ£o.');
     }
   };
 
@@ -590,7 +587,7 @@ const Rooms = () => {
   };
 
   const openQR = (room) => setQrModal({ open: true, room });
-  const openQRImage = (room) => setQrImageModal({ open: true, room }); // ✅ NOVA FUNÇÃO
+  const openQRImage = (room) => setQrImageModal({ open: true, room }); // âœ… NOVA FUNÃ‡ÃƒO
 
   const exportJson = () => {
     const dataStr = JSON.stringify(rooms, null, 2);
@@ -613,10 +610,10 @@ const Rooms = () => {
 
   const statusCards = useMemo(() => {
     return [
-      { key: 'PENDING', label: 'Pendentes', icon: <PendingActions />, color: 'warning', value: countByStatus.PENDING },
-      { key: 'IN_PROGRESS', label: 'Em andamento', icon: <AccessTime />, color: 'info', value: countByStatus.IN_PROGRESS },
-      { key: 'COMPLETED', label: 'Concluídos', icon: <CheckCircle />, color: 'success', value: countByStatus.COMPLETED },
-      { key: 'NEEDS_ATTENTION', label: 'Atenção', icon: <Warning />, color: 'error', value: countByStatus.NEEDS_ATTENTION },
+      { key: 'PENDING', label: 'Pendentes', value: countByStatus.PENDING },
+      { key: 'IN_PROGRESS', label: 'Em andamento', value: countByStatus.IN_PROGRESS },
+      { key: 'COMPLETED', label: 'Concluídos', value: countByStatus.COMPLETED },
+      { key: 'NEEDS_ATTENTION', label: 'Atenção', value: countByStatus.NEEDS_ATTENTION },
     ];
   }, [countByStatus]);
 
@@ -671,7 +668,7 @@ const Rooms = () => {
             <Typography color="text.secondary">
               {isAdmin
                 ? 'Cadastre, gerencie e acompanhe status de limpeza com rastreabilidade.'
-                : 'Visualize ambientes e status para execução da limpeza.'}
+                : 'Visualize ambientes e status para execuÃ§Ã£o da limpeza.'}
             </Typography>
           </Box>
 
@@ -725,7 +722,6 @@ const Rooms = () => {
                     {c.value}
                   </Typography>
                 </Box>
-                <Chip icon={c.icon} label={c.key} color={c.color} sx={{ fontWeight: 900 }} />
               </Stack>
             </Paper>
           </Grid>
@@ -738,7 +734,7 @@ const Rooms = () => {
             <TextField
               fullWidth
               size="small"
-              placeholder="Buscar por nome, localização ou QR..."
+              placeholder="Buscar por nome, localizaÃ§Ã£o ou QR..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               InputProps={{
@@ -758,8 +754,8 @@ const Rooms = () => {
                 <MenuItem value="ALL">Todos</MenuItem>
                 <MenuItem value="PENDING">Pendentes</MenuItem>
                 <MenuItem value="IN_PROGRESS">Em andamento</MenuItem>
-                <MenuItem value="COMPLETED">Concluídos</MenuItem>
-                <MenuItem value="NEEDS_ATTENTION">Atenção</MenuItem>
+                <MenuItem value="COMPLETED">ConcluÃ­dos</MenuItem>
+                <MenuItem value="NEEDS_ATTENTION">AtenÃ§Ã£o</MenuItem>
               </Select>
             </FormControl>
           </Grid>
@@ -772,7 +768,7 @@ const Rooms = () => {
                 <MenuItem value="ROOM">Salas</MenuItem>
                 <MenuItem value="BATHROOM">Banheiros</MenuItem>
                 <MenuItem value="KITCHEN">Cozinhas</MenuItem>
-                <MenuItem value="MEETING_ROOM">Reunião</MenuItem>
+                <MenuItem value="MEETING_ROOM">ReuniÃ£o</MenuItem>
               </Select>
             </FormControl>
           </Grid>
@@ -802,7 +798,7 @@ const Rooms = () => {
           <Tab label="Salas" icon={tabIcon(1)} iconPosition="start" />
           <Tab label="Banheiros" icon={tabIcon(2)} iconPosition="start" />
           <Tab label="Cozinhas" icon={tabIcon(3)} iconPosition="start" />
-          <Tab label="Reunião" icon={tabIcon(4)} iconPosition="start" />
+          <Tab label="ReuniÃ£o" icon={tabIcon(4)} iconPosition="start" />
         </Tabs>
       </Paper>
 
@@ -895,11 +891,11 @@ const Rooms = () => {
                   fontWeight: room.qrCode ? 'bold' : 'normal',
                   color: room.qrCode ? 'text.primary' : 'text.secondary'
                 }}>
-                  {room.qrCode ? `${room.qrCode.substring(0, 20)}...` : 'Não gerado'}
+                  {room.qrCode ? `${room.qrCode.substring(0, 20)}...` : 'NÃ£o gerado'}
                 </Typography>
               </Paper>
 
-              {/* Ações */}
+              {/* AÃ§Ãµes */}
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 {isAdmin && (
                   <>
@@ -972,7 +968,7 @@ const Rooms = () => {
       {/* Modal QR Simples */}
       <QRModal open={qrModal.open} onClose={() => setQrModal({ open: false, room: null })} room={qrModal.room} />
 
-      {/* ✅ NOVO Modal QR Image */}
+      {/* âœ… NOVO Modal QR Image */}
       <QRImageModal 
         open={qrImageModal.open} 
         onClose={() => setQrImageModal({ open: false, room: null })} 
@@ -987,7 +983,7 @@ const Rooms = () => {
         room={deleteModal.room}
       />
 
-      {/* Modal de Edição/Criação */}
+      {/* Modal de EdiÃ§Ã£o/CriaÃ§Ã£o */}
       {isAdmin && (
         <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
           <DialogTitle sx={{ fontWeight: 900 }}>{selectedRoom ? 'Editar Ambiente' : 'Novo Ambiente'}</DialogTitle>
@@ -1008,20 +1004,20 @@ const Rooms = () => {
                   <MenuItem value="ROOM">Sala</MenuItem>
                   <MenuItem value="BATHROOM">Banheiro</MenuItem>
                   <MenuItem value="KITCHEN">Cozinha</MenuItem>
-                  <MenuItem value="MEETING_ROOM">Sala de Reunião</MenuItem>
+                  <MenuItem value="MEETING_ROOM">Sala de ReuniÃ£o</MenuItem>
                 </Select>
               </FormControl>
 
               <TextField
                 fullWidth
-                label="Localização"
+                label="LocalizaÃ§Ã£o"
                 value={newRoom.location}
                 onChange={(e) => setNewRoom({ ...newRoom, location: e.target.value })}
-                placeholder="Ex: 1º Andar - Ala Leste"
+                placeholder="Ex: 1Âº Andar - Ala Leste"
                 required
               />
 
-              {/* ✅ CAMPO QR CODE (OPCIONAL - Se vazio, o backend gera automaticamente) */}
+              {/* âœ… CAMPO QR CODE (OPCIONAL - Se vazio, o backend gera automaticamente) */}
               <TextField
                 fullWidth
                 label="QR Code do Ambiente"
@@ -1053,7 +1049,7 @@ const Rooms = () => {
                 <InputLabel>Prioridade</InputLabel>
                 <Select value={newRoom.priority} label="Prioridade" onChange={(e) => setNewRoom({ ...newRoom, priority: e.target.value })}>
                   <MenuItem value="LOW">Baixa</MenuItem>
-                  <MenuItem value="MEDIUM">Média</MenuItem>
+                  <MenuItem value="MEDIUM">MÃ©dia</MenuItem>
                   <MenuItem value="HIGH">Alta</MenuItem>
                   <MenuItem value="URGENT">Urgente</MenuItem>
                 </Select>
@@ -1061,12 +1057,12 @@ const Rooms = () => {
 
               <TextField
                 fullWidth
-                label="Descrição/Observações"
+                label="DescriÃ§Ã£o/ObservaÃ§Ãµes"
                 value={newRoom.description}
                 onChange={(e) => setNewRoom({ ...newRoom, description: e.target.value })}
                 multiline
                 rows={3}
-                placeholder="Observações sobre o ambiente..."
+                placeholder="ObservaÃ§Ãµes sobre o ambiente..."
               />
             </Box>
           </DialogContent>
