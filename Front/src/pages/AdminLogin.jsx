@@ -28,8 +28,8 @@ const AdminLogin = () => {
   const navigate = useNavigate();
   const { login, user, loading } = useAuth();
 
-  const [email, setEmail] = useState("admin@limpeza.com");
-  const [password, setPassword] = useState("senha123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
 
